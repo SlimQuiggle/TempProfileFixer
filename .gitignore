@@ -1,0 +1,7 @@
+backups/
+logs/
+*.log
+*.tmp
+*.bak
+*.old
+*.old.*
