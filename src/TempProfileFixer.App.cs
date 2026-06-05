@@ -6,6 +6,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Management;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text;
@@ -393,6 +394,7 @@ namespace TempProfileFixer
         private readonly ToolStripMenuItem openRegistryMenuItem;
         private readonly NotifyIcon trayIcon;
         private readonly Icon appIcon;
+        private readonly Image headerImage;
         private List<ProfileRecord> profiles = new List<ProfileRecord>();
 
         public MainForm()
@@ -408,6 +410,7 @@ namespace TempProfileFixer
             {
                 Icon = appIcon;
             }
+            headerImage = ProfileService.LoadHeaderImage();
 
             trayIcon = new NotifyIcon();
             trayIcon.Text = "Temp Profile Fixer";
@@ -432,19 +435,25 @@ namespace TempProfileFixer
 
             Panel topPanel = new Panel();
             topPanel.Dock = DockStyle.Top;
-            topPanel.Height = 72;
+            topPanel.Height = 80;
             topPanel.Padding = new Padding(12, 10, 12, 8);
+
+            PictureBox headerIcon = new PictureBox();
+            headerIcon.Image = headerImage;
+            headerIcon.SizeMode = PictureBoxSizeMode.Zoom;
+            headerIcon.Location = new Point(14, 10);
+            headerIcon.Size = new Size(58, 58);
 
             Label titleLabel = new Label();
             titleLabel.Text = "Temp Profile Fixer";
             titleLabel.Font = new Font("Segoe UI", 14, FontStyle.Bold);
             titleLabel.AutoSize = true;
-            titleLabel.Location = new Point(12, 9);
+            titleLabel.Location = new Point(84, 13);
 
             Label subtitleLabel = new Label();
             subtitleLabel.Text = "Rename a local profile to .old<date>, export/delete matching ProfileList keys, and prompt for reboot.";
             subtitleLabel.AutoSize = true;
-            subtitleLabel.Location = new Point(14, 39);
+            subtitleLabel.Location = new Point(86, 43);
 
             Button refreshButton = new Button();
             refreshButton.Text = "Refresh";
@@ -470,6 +479,7 @@ namespace TempProfileFixer
             rebuildButton.Location = new Point(1004, 20);
             rebuildButton.Click += delegate { RebuildSelectedProfile(); };
 
+            topPanel.Controls.Add(headerIcon);
             topPanel.Controls.Add(titleLabel);
             topPanel.Controls.Add(subtitleLabel);
             topPanel.Controls.Add(refreshButton);
@@ -539,6 +549,10 @@ namespace TempProfileFixer
                 if (appIcon != null)
                 {
                     appIcon.Dispose();
+                }
+                if (headerImage != null)
+                {
+                    headerImage.Dispose();
                 }
             };
         }
@@ -1059,6 +1073,23 @@ namespace TempProfileFixer
             }
 
             return (Icon)SystemIcons.Application.Clone();
+        }
+
+        public static Image LoadHeaderImage()
+        {
+            Assembly assembly = Assembly.GetExecutingAssembly();
+            using (Stream stream = assembly.GetManifestResourceStream("TempProfileFixer.Assets.TempProfileFixer.png"))
+            {
+                if (stream != null)
+                {
+                    return Image.FromStream(stream);
+                }
+            }
+
+            using (Icon icon = LoadApplicationIcon())
+            {
+                return icon.ToBitmap();
+            }
         }
 
         public static void OpenRegistryForProfile(ProfileRecord profile)

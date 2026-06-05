@@ -5,9 +5,12 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$exe = Join-Path $repoRoot 'dist\TempProfileFixer.exe'
+$obj = Join-Path $repoRoot 'obj'
+New-Item -Path $obj -ItemType Directory -Force | Out-Null
+$manifestExe = Join-Path $obj 'TempProfileFixer.ManifestSmoke.exe'
+$exe = $manifestExe
 
-& (Join-Path $repoRoot 'build.ps1')
+& (Join-Path $repoRoot 'build.ps1') -OutputFile $manifestExe
 
 if (-not (Test-Path -LiteralPath $exe)) {
     throw "Expected EXE was not built: $exe"
@@ -29,10 +32,9 @@ if (-not $isAdmin) {
         throw 'Could not find csc.exe for smoke-test build.'
     }
 
-    $obj = Join-Path $repoRoot 'obj'
-    New-Item -Path $obj -ItemType Directory -Force | Out-Null
     $smokeExe = Join-Path $obj 'TempProfileFixer.Smoke.exe'
     & $csc /nologo /target:exe /platform:anycpu /optimize+ "/out:$smokeExe" `
+        "/resource:$(Join-Path $repoRoot 'assets\TempProfileFixer.png'),TempProfileFixer.Assets.TempProfileFixer.png" `
         /reference:System.dll `
         /reference:System.Core.dll `
         /reference:System.Drawing.dll `

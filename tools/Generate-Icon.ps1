@@ -35,37 +35,36 @@ function New-TempProfileFixerIconBitmap {
     }
 
     $ink = [System.Drawing.Color]::FromArgb(25, 25, 25)
-    $accent = [System.Drawing.Color]::FromArgb(36, 115, 216)
-    $line = Pen $ink 13
-    $thin = Pen $ink 8
-    $blue = Pen $accent 11
+    $accent = [System.Drawing.Color]::FromArgb(34, 110, 210)
+    $line = Pen $ink 12
+    $thin = Pen $ink 7
+    $blue = Pen $accent 9
 
     try {
-        # Goofy head outline.
-        $graphics.DrawEllipse($line, (S 48), (S 42), (S 150), (S 160))
-        $graphics.DrawArc($thin, (S 34), (S 96), (S 40), (S 46), 95, 205)
-        $graphics.DrawArc($thin, (S 180), (S 96), (S 40), (S 46), -115, 205)
+        # Simple outline head with ears.
+        $graphics.DrawEllipse($line, (S 58), (S 58), (S 140), (S 146))
+        $graphics.DrawArc($thin, (S 43), (S 112), (S 34), (S 42), 92, 205)
+        $graphics.DrawArc($thin, (S 179), (S 112), (S 34), (S 42), -117, 205)
 
-        # Loose hair squiggles.
-        $graphics.DrawBezier($thin, (S 78), (S 52), (S 72), (S 28), (S 108), (S 34), (S 96), (S 58))
-        $graphics.DrawBezier($thin, (S 108), (S 45), (S 115), (S 22), (S 148), (S 36), (S 130), (S 60))
+        # Minimal goofy face.
+        $graphics.DrawEllipse($thin, (S 91), (S 111), (S 16), (S 22))
+        $graphics.DrawEllipse($thin, (S 145), (S 111), (S 16), (S 22))
+        $graphics.DrawArc($thin, (S 99), (S 142), (S 58), (S 34), 15, 150)
 
-        # Goofy face.
-        $graphics.DrawEllipse($thin, (S 83), (S 94), (S 20), (S 28))
-        $graphics.FillEllipse([System.Drawing.Brushes]::Black, (S 91), (S 104), (S 7), (S 7))
-        $graphics.DrawArc($thin, (S 132), (S 93), (S 28), (S 28), 20, 320)
-        $graphics.DrawArc($thin, (S 91), (S 134), (S 64), (S 36), 10, 145)
-        $graphics.DrawLine($thin, (S 117), (S 118), (S 108), (S 138))
+        # Tiny "fixed here" patch on the forehead.
+        $graphics.DrawLine($blue, (S 107), (S 82), (S 145), (S 82))
+        $graphics.DrawLine($blue, (S 126), (S 67), (S 126), (S 97))
 
-        # Bandage / profile patch on the cheek.
-        $graphics.DrawLine($blue, (S 64), (S 142), (S 105), (S 154))
-        $graphics.DrawLine($blue, (S 72), (S 132), (S 97), (S 164))
+        # Hammer angled down toward the head.
+        $graphics.DrawLine($line, (S 162), (S 57), (S 218), (S 111))
+        $graphics.DrawLine($line, (S 184), (S 32), (S 224), (S 72))
+        $graphics.DrawLine($line, (S 170), (S 46), (S 198), (S 18))
+        $graphics.DrawLine($line, (S 211), (S 86), (S 239), (S 58))
 
-        # Little wrench crossing the head to imply repair/fix.
-        $graphics.DrawLine($line, (S 157), (S 186), (S 218), (S 126))
-        $graphics.DrawArc($line, (S 202), (S 101), (S 42), (S 42), 124, 225)
-        $graphics.DrawLine($line, (S 200), (S 126), (S 226), (S 152))
-        $graphics.DrawEllipse($line, (S 145), (S 181), (S 22), (S 22))
+        # Impact marks.
+        $graphics.DrawLine($thin, (S 151), (S 50), (S 142), (S 33))
+        $graphics.DrawLine($thin, (S 142), (S 62), (S 124), (S 56))
+        $graphics.DrawLine($thin, (S 166), (S 40), (S 170), (S 22))
     }
     finally {
         $line.Dispose()

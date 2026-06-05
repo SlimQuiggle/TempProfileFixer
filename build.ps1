@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$Configuration = 'Release'
+    [string]$Configuration = 'Release',
+    [string]$OutputFile
 )
 
 Set-StrictMode -Version 2.0
@@ -23,12 +24,22 @@ else {
 $dist = Join-Path $repoRoot 'dist'
 New-Item -Path $dist -ItemType Directory -Force | Out-Null
 
-$outFile = Join-Path $dist 'TempProfileFixer.exe'
+if ([string]::IsNullOrWhiteSpace($OutputFile)) {
+    $outFile = Join-Path $dist 'TempProfileFixer.exe'
+}
+else {
+    $outFile = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputFile)
+    $outDirectory = Split-Path -Parent $outFile
+    if (-not [string]::IsNullOrWhiteSpace($outDirectory)) {
+        New-Item -Path $outDirectory -ItemType Directory -Force | Out-Null
+    }
+}
 $source = Join-Path $repoRoot 'src\TempProfileFixer.App.cs'
 $manifest = Join-Path $repoRoot 'TempProfileFixer.exe.manifest'
 $icon = Join-Path $repoRoot 'assets\TempProfileFixer.ico'
+$png = Join-Path $repoRoot 'assets\TempProfileFixer.png'
 
-if (-not (Test-Path -LiteralPath $icon)) {
+if (-not (Test-Path -LiteralPath $icon) -or -not (Test-Path -LiteralPath $png)) {
     & (Join-Path $repoRoot 'tools\Generate-Icon.ps1')
 }
 
@@ -40,6 +51,7 @@ $args = @(
     "/out:$outFile",
     "/win32manifest:$manifest",
     "/win32icon:$icon",
+    "/resource:$png,TempProfileFixer.Assets.TempProfileFixer.png",
     '/reference:System.dll',
     '/reference:System.Core.dll',
     '/reference:System.Drawing.dll',
