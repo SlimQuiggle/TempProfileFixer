@@ -386,7 +386,6 @@ namespace TempProfileFixer
         private readonly DataGridView grid;
         private readonly Label statusLabel;
         private readonly Button rebuildButton;
-        private readonly Button dryRunButton;
         private readonly ToolStripMenuItem rebuildMenuItem;
         private readonly ToolStripMenuItem removeRegistryMenuItem;
         private readonly ToolStripMenuItem copySidMenuItem;
@@ -462,13 +461,6 @@ namespace TempProfileFixer
             refreshButton.Location = new Point(416, 78);
             refreshButton.Click += delegate { RefreshProfiles(); };
 
-            dryRunButton = new Button();
-            dryRunButton.Text = "Dry Run";
-            dryRunButton.Width = 96;
-            dryRunButton.Height = 30;
-            dryRunButton.Location = new Point(304, 78);
-            dryRunButton.Click += delegate { ShowSelectedPlan(); };
-
             rebuildButton = new Button();
             rebuildButton.Text = "Rebuild Profile";
             rebuildButton.Width = 204;
@@ -486,7 +478,6 @@ namespace TempProfileFixer
             topPanel.Controls.Add(titleLabel);
             topPanel.Controls.Add(subtitleLabel);
             topPanel.Controls.Add(refreshButton);
-            topPanel.Controls.Add(dryRunButton);
             topPanel.Controls.Add(rebuildButton);
 
             grid = new DataGridView();
@@ -637,13 +628,21 @@ namespace TempProfileFixer
         {
             ProfileRecord selected = GetSelectedProfile();
             bool hasSelection = selected != null;
-            dryRunButton.Enabled = hasSelection;
-            rebuildButton.Enabled = hasSelection && !selected.IsBlocked;
-            rebuildMenuItem.Enabled = hasSelection && !selected.IsBlocked;
+            bool canRebuild = hasSelection && !selected.IsBlocked;
+            rebuildButton.Enabled = canRebuild;
+            ApplyRebuildButtonStyle(canRebuild);
+            rebuildMenuItem.Enabled = canRebuild;
             removeRegistryMenuItem.Enabled = hasSelection && selected.HasRegistryEntries && !selected.IsBlocked;
             copySidMenuItem.Enabled = hasSelection && !String.IsNullOrWhiteSpace(selected.BaseSid);
             copyPathMenuItem.Enabled = hasSelection;
             openRegistryMenuItem.Enabled = hasSelection && selected.HasRegistryEntries;
+        }
+
+        private void ApplyRebuildButtonStyle(bool canRebuild)
+        {
+            rebuildButton.BackColor = canRebuild ? Color.FromArgb(36, 115, 216) : Color.FromArgb(176, 180, 186);
+            rebuildButton.ForeColor = canRebuild ? Color.White : Color.FromArgb(82, 88, 96);
+            rebuildButton.Cursor = canRebuild ? Cursors.Hand : Cursors.Default;
         }
 
         private void ShowSelectedPlan()

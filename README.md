@@ -54,6 +54,8 @@ Right-click a profile row for actions:
 The large top-left `Rebuild Profile` button runs the full rebuild for the
 highlighted profile: rename the folder to `.old<date>`, export/delete matching
 ProfileList registry entries, then start the reboot after the rebuild succeeds.
+It greys out when the highlighted profile is locked, loaded, current, or
+otherwise blocked.
 
 ## Command line
 
