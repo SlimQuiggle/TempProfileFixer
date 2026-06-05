@@ -1,5 +1,6 @@
 backups/
 logs/
+obj/
 *.log
 *.tmp
 *.bak
