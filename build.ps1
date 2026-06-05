@@ -70,4 +70,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "csc.exe failed with exit code $LASTEXITCODE."
 }
 
+$readme = Join-Path $repoRoot 'README.md'
+$commandLineReadme = Join-Path $repoRoot 'COMMAND-LINE.md'
+if ((Split-Path -Parent $outFile) -eq $dist) {
+    Copy-Item -LiteralPath $readme -Destination (Join-Path $dist 'README.md') -Force
+    Copy-Item -LiteralPath $commandLineReadme -Destination (Join-Path $dist 'COMMAND-LINE.md') -Force
+}
+
 Write-Host "Built $outFile"

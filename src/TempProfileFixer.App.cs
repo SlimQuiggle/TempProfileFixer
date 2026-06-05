@@ -61,7 +61,7 @@ namespace TempProfileFixer
         {
             string command = args[0].Trim().ToLowerInvariant();
             ParsedArgs parsed = ParsedArgs.Parse(args.Skip(1).ToArray());
-            string usersRoot = parsed.GetValue("users-root", Path.Combine(Environment.GetEnvironmentVariable("SystemDrive") ?? "C:", "Users"));
+            ProfileTarget target = ProfileTarget.FromParsedArgs(parsed);
 
             if (command == "help" || command == "--help" || command == "-h" || command == "/?")
             {
@@ -71,33 +71,21 @@ namespace TempProfileFixer
 
             if (command == "list")
             {
-                ListProfiles(usersRoot);
+                ListProfiles(target);
                 return 0;
             }
 
             if (command == "dry-run" || command == "plan")
             {
-                string path = parsed.GetPath();
-                if (String.IsNullOrWhiteSpace(path))
-                {
-                    throw new InvalidOperationException("dry-run requires --path C:\\Users\\<name>.");
-                }
-
-                ProfileRecord profile = ProfileService.FindProfileByPath(path, usersRoot);
+                ProfileRecord profile = GetProfileForCommand(parsed, target, "dry-run");
                 RebuildPlan plan = ProfileService.CreateRebuildPlan(profile, DateTime.Now);
                 Console.WriteLine(plan.ToDisplayText());
                 return 0;
             }
 
-            if (command == "rebuild")
+            if (command == "rebuild" || command == "rebuild-profile")
             {
-                string path = parsed.GetPath();
-                if (String.IsNullOrWhiteSpace(path))
-                {
-                    throw new InvalidOperationException("rebuild requires --path C:\\Users\\<name>.");
-                }
-
-                ProfileRecord profile = ProfileService.FindProfileByPath(path, usersRoot);
+                ProfileRecord profile = GetProfileForCommand(parsed, target, "rebuild");
                 RebuildPlan plan = ProfileService.CreateRebuildPlan(profile, DateTime.Now);
                 Console.WriteLine(plan.ToDisplayText());
 
@@ -112,21 +100,15 @@ namespace TempProfileFixer
                     return 2;
                 }
 
-                RebuildResult result = ProfileService.RebuildProfile(path, usersRoot);
+                RebuildResult result = ProfileService.RebuildProfile(profile.ProfilePath, target);
                 Console.WriteLine(result.ToDisplayText());
-                PromptForReboot(parsed);
+                PromptForReboot(parsed, target);
                 return 0;
             }
 
             if (command == "remove-registry" || command == "remove-reg" || command == "delete-registry")
             {
-                string path = parsed.GetPath();
-                if (String.IsNullOrWhiteSpace(path))
-                {
-                    throw new InvalidOperationException("remove-registry requires --path C:\\Users\\<name>.");
-                }
-
-                ProfileRecord profile = ProfileService.FindProfileByPath(path, usersRoot);
+                ProfileRecord profile = GetProfileForCommand(parsed, target, "remove-registry");
                 RegistryRemovalPlan plan = ProfileService.CreateRegistryRemovalPlan(profile);
                 Console.WriteLine(plan.ToDisplayText());
 
@@ -141,20 +123,14 @@ namespace TempProfileFixer
                     return 2;
                 }
 
-                RegistryRemovalResult result = ProfileService.RemoveRegistryEntries(path, usersRoot);
+                RegistryRemovalResult result = ProfileService.RemoveRegistryEntries(profile.ProfilePath, target);
                 Console.WriteLine(result.ToDisplayText());
                 return 0;
             }
 
             if (command == "delete-profile" || command == "delete")
             {
-                string path = parsed.GetPath();
-                if (String.IsNullOrWhiteSpace(path))
-                {
-                    throw new InvalidOperationException("delete-profile requires --path C:\\Users\\<name>.");
-                }
-
-                ProfileRecord profile = ProfileService.FindProfileByPath(path, usersRoot);
+                ProfileRecord profile = GetProfileForCommand(parsed, target, "delete-profile");
                 DeleteProfilePlan plan = ProfileService.CreateDeleteProfilePlan(profile);
                 Console.WriteLine(plan.ToDisplayText());
 
@@ -169,20 +145,14 @@ namespace TempProfileFixer
                     return 2;
                 }
 
-                DeleteProfileResult result = ProfileService.DeleteProfile(path, usersRoot);
+                DeleteProfileResult result = ProfileService.DeleteProfile(profile.ProfilePath, target);
                 Console.WriteLine(result.ToDisplayText());
                 return 0;
             }
 
             if (command == "remove-bak" || command == "fix-bak")
             {
-                string path = parsed.GetPath();
-                if (String.IsNullOrWhiteSpace(path))
-                {
-                    throw new InvalidOperationException("remove-bak requires --path C:\\Users\\<name>.");
-                }
-
-                ProfileRecord profile = ProfileService.FindProfileByPath(path, usersRoot);
+                ProfileRecord profile = GetProfileForCommand(parsed, target, "remove-bak");
                 if (!profile.BakKeyPresent)
                 {
                     Console.WriteLine("No .bak ProfileList key was found for " + profile.ProfilePath + ".");
@@ -192,7 +162,7 @@ namespace TempProfileFixer
                 Console.WriteLine("The following .bak ProfileList key(s) will be exported and deleted:");
                 foreach (string keyName in profile.BakKeyNames)
                 {
-                    Console.WriteLine("  " + ProfileService.ProfileListRegPath + "\\" + keyName);
+                    Console.WriteLine("  " + profile.RegistryRoot + "\\" + keyName);
                 }
 
                 if (!parsed.HasFlag("yes") && !ConfirmTyped("Type REMOVEBAK to delete the listed .bak key(s): ", "REMOVEBAK"))
@@ -201,7 +171,7 @@ namespace TempProfileFixer
                     return 2;
                 }
 
-                BakRemovalResult result = ProfileService.RemoveBakKeys(path, usersRoot);
+                BakRemovalResult result = ProfileService.RemoveBakKeys(profile.ProfilePath, target);
                 Console.WriteLine(result.ToDisplayText());
                 return 0;
             }
@@ -210,9 +180,27 @@ namespace TempProfileFixer
             return 1;
         }
 
-        private static void ListProfiles(string usersRoot)
+        private static ProfileRecord GetProfileForCommand(ParsedArgs parsed, ProfileTarget target, string commandName)
         {
-            List<ProfileRecord> profiles = ProfileService.GetProfiles(usersRoot);
+            string sid = parsed.GetSid();
+            if (!String.IsNullOrWhiteSpace(sid))
+            {
+                return ProfileService.FindProfileBySid(sid, target);
+            }
+
+            string path = target.ResolveProfilePath(parsed);
+            if (String.IsNullOrWhiteSpace(path))
+            {
+                throw new InvalidOperationException(commandName + " requires --profile <folder>, --path C:\\Users\\<name>, or --sid <baseSid>.");
+            }
+
+            return ProfileService.FindProfileByPath(path, target);
+        }
+
+        private static void ListProfiles(ProfileTarget target)
+        {
+            List<ProfileRecord> profiles = ProfileService.GetProfiles(target);
+            Console.WriteLine("Target: " + target.DisplayName);
             Console.WriteLine("{0,-22} {1,-34} {2,-48} {3,-7} {4,-7} {5}", "Folder", "ProfilePath", "BaseSid", "Loaded", ".bak", "Status");
             Console.WriteLine(new String('-', 140));
             foreach (ProfileRecord profile in profiles)
@@ -245,25 +233,25 @@ namespace TempProfileFixer
             return String.Equals(input, expected, StringComparison.Ordinal);
         }
 
-        private static void PromptForReboot(ParsedArgs parsed)
+        private static void PromptForReboot(ParsedArgs parsed, ProfileTarget target)
         {
-            if (parsed.HasFlag("no-reboot-prompt"))
+            if (parsed.HasFlag("no-reboot-prompt") || parsed.HasFlag("no-reboot"))
             {
                 return;
             }
 
-            if (parsed.HasFlag("reboot"))
+            if (parsed.HasFlag("reboot") || parsed.HasFlag("restart"))
             {
-                ProfileService.RebootComputer();
+                ProfileService.RebootComputer(target.ComputerName);
                 return;
             }
 
-            Console.Write("Rebuild complete. Reboot now? [y/N]: ");
+            Console.Write("Rebuild complete. Reboot " + target.DisplayName + " now? [y/N]: ");
             string answer = Console.ReadLine();
             if (String.Equals(answer, "y", StringComparison.OrdinalIgnoreCase) ||
                 String.Equals(answer, "yes", StringComparison.OrdinalIgnoreCase))
             {
-                ProfileService.RebootComputer();
+                ProfileService.RebootComputer(target.ComputerName);
             }
         }
 
@@ -275,12 +263,18 @@ namespace TempProfileFixer
             Console.WriteLine("  TempProfileFixer.exe");
             Console.WriteLine();
             Console.WriteLine("Commands:");
-            Console.WriteLine("  TempProfileFixer.exe list [--users-root C:\\Users]");
-            Console.WriteLine("  TempProfileFixer.exe dry-run --path C:\\Users\\SomeUser");
-            Console.WriteLine("  TempProfileFixer.exe rebuild --path C:\\Users\\SomeUser [--yes] [--reboot] [--no-reboot-prompt]");
-            Console.WriteLine("  TempProfileFixer.exe delete-profile --path C:\\Users\\SomeUser [--yes]");
-            Console.WriteLine("  TempProfileFixer.exe remove-registry --path C:\\Users\\SomeUser [--yes]");
-            Console.WriteLine("  TempProfileFixer.exe remove-bak --path C:\\Users\\SomeUser [--yes]");
+            Console.WriteLine("  TempProfileFixer.exe list [--computer PCNAME] [--users-root C:\\Users]");
+            Console.WriteLine("  TempProfileFixer.exe dry-run (--profile SomeUser | --path C:\\Users\\SomeUser | --sid S-1-...) [--computer PCNAME]");
+            Console.WriteLine("  TempProfileFixer.exe rebuild (--profile SomeUser | --path C:\\Users\\SomeUser | --sid S-1-...) [--computer PCNAME] [--yes] [--reboot] [--no-reboot-prompt]");
+            Console.WriteLine("  TempProfileFixer.exe delete-profile (--profile SomeUser | --path C:\\Users\\SomeUser | --sid S-1-...) [--computer PCNAME] [--yes]");
+            Console.WriteLine("  TempProfileFixer.exe remove-registry (--profile SomeUser | --path C:\\Users\\SomeUser | --sid S-1-...) [--computer PCNAME] [--yes]");
+            Console.WriteLine("  TempProfileFixer.exe remove-bak (--profile SomeUser | --path C:\\Users\\SomeUser | --sid S-1-...) [--computer PCNAME] [--yes]");
+            Console.WriteLine();
+            Console.WriteLine("Targeting:");
+            Console.WriteLine("  --profile SomeUser       Selects C:\\Users\\SomeUser under the target users root.");
+            Console.WriteLine("  --computer PCNAME        Uses \\\\PCNAME\\C$\\Users plus remote HKLM ProfileList access.");
+            Console.WriteLine("  --users-root PATH        Overrides the filesystem users root.");
+            Console.WriteLine("  --profile-root PATH      Overrides the ProfileImagePath root used for registry matching.");
             Console.WriteLine();
             Console.WriteLine("rebuild renames the profile folder to .old<date>, exports/deletes the matching normal SID key");
             Console.WriteLine("and matching .bak key, then prompts for reboot.");
@@ -355,6 +349,25 @@ namespace TempProfileFixer
             return values.TryGetValue(key, out value) ? value : defaultValue;
         }
 
+        public bool HasValue(string key)
+        {
+            return values.ContainsKey(key);
+        }
+
+        public string GetFirstValue(params string[] keys)
+        {
+            foreach (string key in keys)
+            {
+                string value;
+                if (values.TryGetValue(key, out value))
+                {
+                    return value;
+                }
+            }
+
+            return null;
+        }
+
         public string GetPath()
         {
             string value;
@@ -364,6 +377,16 @@ namespace TempProfileFixer
             }
 
             return positional.Count > 0 ? positional[0] : null;
+        }
+
+        public string GetProfileName()
+        {
+            return GetFirstValue("profile", "user", "username", "folder");
+        }
+
+        public string GetSid()
+        {
+            return GetFirstValue("sid", "base-sid");
         }
 
         private static bool IsOption(string value)
@@ -409,6 +432,179 @@ namespace TempProfileFixer
         }
     }
 
+    internal sealed class ProfileTarget
+    {
+        public string ComputerName { get; private set; }
+        public string UsersRoot { get; private set; }
+        public string ProfileImageRoot { get; private set; }
+
+        public bool IsRemote
+        {
+            get { return !String.IsNullOrWhiteSpace(ComputerName); }
+        }
+
+        public string DisplayName
+        {
+            get { return IsRemote ? "\\\\" + ComputerName : "local computer"; }
+        }
+
+        public string RegistryPath
+        {
+            get { return ProfileService.GetProfileListRegPath(ComputerName); }
+        }
+
+        public static ProfileTarget FromParsedArgs(ParsedArgs parsed)
+        {
+            string computer = NormalizeComputerName(parsed.GetFirstValue("computer", "target", "remote-computer"));
+            string systemDrive = parsed.GetValue("system-drive", Environment.GetEnvironmentVariable("SystemDrive") ?? "C:");
+            if (String.IsNullOrWhiteSpace(systemDrive))
+            {
+                systemDrive = "C:";
+            }
+
+            string defaultProfileRoot = Path.Combine(EnsureDriveRoot(systemDrive), "Users");
+            string profileRoot = parsed.GetValue("profile-root", defaultProfileRoot);
+            string usersRoot = parsed.GetValue("users-root", null);
+            if (String.IsNullOrWhiteSpace(usersRoot))
+            {
+                usersRoot = String.IsNullOrWhiteSpace(computer) ? profileRoot : ToRemoteAdminShare(computer, profileRoot);
+            }
+            else if (!String.IsNullOrWhiteSpace(computer))
+            {
+                usersRoot = ConvertLogicalRootToRemote(computer, usersRoot);
+            }
+
+            return new ProfileTarget
+            {
+                ComputerName = computer,
+                UsersRoot = usersRoot,
+                ProfileImageRoot = profileRoot
+            };
+        }
+
+        public static ProfileTarget Local(string usersRoot)
+        {
+            string root = String.IsNullOrWhiteSpace(usersRoot)
+                ? Path.Combine(Environment.GetEnvironmentVariable("SystemDrive") ?? "C:", "Users")
+                : usersRoot;
+            return new ProfileTarget
+            {
+                ComputerName = null,
+                UsersRoot = root,
+                ProfileImageRoot = root
+            };
+        }
+
+        public string ResolveProfilePath(ParsedArgs parsed)
+        {
+            string profileName = parsed.GetProfileName();
+            if (!String.IsNullOrWhiteSpace(profileName))
+            {
+                return Path.Combine(UsersRoot, profileName);
+            }
+
+            string path = parsed.GetPath();
+            if (String.IsNullOrWhiteSpace(path))
+            {
+                return null;
+            }
+
+            if (!LooksLikeDrivePath(path) && !path.StartsWith(@"\\", StringComparison.Ordinal))
+            {
+                return Path.Combine(UsersRoot, path);
+            }
+
+            if (IsRemote)
+            {
+                return ConvertLogicalPathToActual(path);
+            }
+
+            return path;
+        }
+
+        public string GetLogicalPathForFolder(string folderName)
+        {
+            return Path.Combine(ProfileImageRoot, folderName);
+        }
+
+        private string ConvertLogicalPathToActual(string path)
+        {
+            string trimmed = path.Trim();
+            string normalizedProfileRoot = ProfileService.NormalizePath(ProfileImageRoot);
+            string normalizedInput = ProfileService.NormalizePath(trimmed);
+            if (!String.IsNullOrWhiteSpace(normalizedProfileRoot) &&
+                normalizedInput.StartsWith(normalizedProfileRoot + "\\", StringComparison.OrdinalIgnoreCase))
+            {
+                string suffix = trimmed.Substring(ProfileImageRoot.TrimEnd('\\').Length).TrimStart('\\');
+                return Path.Combine(UsersRoot, suffix);
+            }
+
+            return ConvertLogicalRootToRemote(ComputerName, trimmed);
+        }
+
+        private static string ConvertLogicalRootToRemote(string computer, string path)
+        {
+            if (String.IsNullOrWhiteSpace(path) || path.StartsWith(@"\\", StringComparison.Ordinal))
+            {
+                return path;
+            }
+
+            if (LooksLikeDrivePath(path))
+            {
+                return ToRemoteAdminShare(computer, path);
+            }
+
+            return path;
+        }
+
+        private static string ToRemoteAdminShare(string computer, string localPath)
+        {
+            string full = localPath.Replace('/', '\\');
+            if (!LooksLikeDrivePath(full))
+            {
+                return full;
+            }
+
+            string drive = Char.ToUpperInvariant(full[0]).ToString();
+            string remainder = full.Substring(2).TrimStart('\\');
+            return @"\\" + computer + "\\" + drive + "$" + (String.IsNullOrWhiteSpace(remainder) ? String.Empty : "\\" + remainder);
+        }
+
+        private static string EnsureDriveRoot(string systemDrive)
+        {
+            string drive = String.IsNullOrWhiteSpace(systemDrive) ? "C:" : systemDrive.Trim().Replace('/', '\\').TrimEnd('\\');
+            if (drive.Length == 2 && Char.IsLetter(drive[0]) && drive[1] == ':')
+            {
+                return drive + "\\";
+            }
+
+            return drive;
+        }
+
+        private static bool LooksLikeDrivePath(string value)
+        {
+            return value != null && value.Length >= 2 && Char.IsLetter(value[0]) && value[1] == ':';
+        }
+
+        private static string NormalizeComputerName(string value)
+        {
+            if (String.IsNullOrWhiteSpace(value))
+            {
+                return null;
+            }
+
+            string computer = value.Trim().TrimStart('\\').TrimEnd('\\');
+            if (String.Equals(computer, ".", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(computer, "localhost", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(computer, Environment.MachineName, StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            return computer;
+        }
+    }
+
     internal sealed class MainForm : Form
     {
         private readonly string usersRoot;
@@ -416,10 +612,11 @@ namespace TempProfileFixer
         private readonly Label statusLabel;
         private readonly Button rebuildButton;
         private readonly Button deleteProfileButton;
+        private readonly Button helpButton;
         private readonly ToolStripMenuItem rebuildMenuItem;
         private readonly ToolStripMenuItem removeRegistryMenuItem;
         private readonly ToolStripMenuItem copySidMenuItem;
-        private readonly ToolStripMenuItem copyPathMenuItem;
+        private readonly ToolStripMenuItem openProfilePathMenuItem;
         private readonly ToolStripMenuItem openRegistryMenuItem;
         private readonly NotifyIcon trayIcon;
         private readonly Icon appIcon;
@@ -495,7 +692,7 @@ namespace TempProfileFixer
             refreshButton.Text = "Refresh";
             refreshButton.Width = 96;
             refreshButton.Height = 30;
-            refreshButton.Location = new Point(542, 78);
+            refreshButton.Location = new Point(704, 78);
             refreshButton.Click += delegate { RefreshProfiles(); };
 
             rebuildButton = new Button();
@@ -524,12 +721,27 @@ namespace TempProfileFixer
             deleteProfileButton.UseVisualStyleBackColor = false;
             deleteProfileButton.Click += delegate { DeleteSelectedProfile(); };
 
+            helpButton = new Button();
+            helpButton.Text = "Help / FAQ";
+            helpButton.Width = 148;
+            helpButton.Height = 38;
+            helpButton.Location = new Point(524, 74);
+            helpButton.Font = new Font("Segoe UI", 10, FontStyle.Bold);
+            helpButton.BackColor = Color.FromArgb(38, 132, 104);
+            helpButton.ForeColor = Color.White;
+            helpButton.FlatStyle = FlatStyle.Flat;
+            helpButton.FlatAppearance.BorderSize = 0;
+            helpButton.UseVisualStyleBackColor = false;
+            helpButton.Cursor = Cursors.Hand;
+            helpButton.Click += delegate { ShowHelpDialog(); };
+
             topPanel.Controls.Add(headerIcon);
             topPanel.Controls.Add(titleLabel);
             topPanel.Controls.Add(subtitleLabel);
             topPanel.Controls.Add(refreshButton);
             topPanel.Controls.Add(rebuildButton);
             topPanel.Controls.Add(deleteProfileButton);
+            topPanel.Controls.Add(helpButton);
 
             grid = new DataGridView();
             grid.Dock = DockStyle.Fill;
@@ -557,7 +769,7 @@ namespace TempProfileFixer
             ContextMenuStrip contextMenu = new ContextMenuStrip();
             rebuildMenuItem = new ToolStripMenuItem("Rebuild Profile", null, delegate { RebuildSelectedProfileAndReboot(); });
             removeRegistryMenuItem = new ToolStripMenuItem("Remove Registry Entry", null, delegate { RemoveSelectedRegistryEntries(); });
-            copyPathMenuItem = new ToolStripMenuItem("Copy Profile Path", null, delegate { CopySelectedPath(); });
+            openProfilePathMenuItem = new ToolStripMenuItem("Open Profile Path", null, delegate { OpenSelectedProfilePath(); });
             copySidMenuItem = new ToolStripMenuItem("Copy SID", null, delegate { CopySelectedSid(); });
             openRegistryMenuItem = new ToolStripMenuItem("Open to Registry", null, delegate { OpenSelectedRegistryKey(); });
             contextMenu.Items.AddRange(new ToolStripItem[]
@@ -565,7 +777,7 @@ namespace TempProfileFixer
                 rebuildMenuItem,
                 removeRegistryMenuItem,
                 new ToolStripSeparator(),
-                copyPathMenuItem,
+                openProfilePathMenuItem,
                 copySidMenuItem,
                 openRegistryMenuItem,
                 new ToolStripSeparator(),
@@ -581,7 +793,15 @@ namespace TempProfileFixer
             statusLabel = new Label();
             statusLabel.Dock = DockStyle.Fill;
             statusLabel.Text = "Ready.";
+            Label creditLabel = new Label();
+            creditLabel.Dock = DockStyle.Right;
+            creditLabel.Width = 180;
+            creditLabel.TextAlign = ContentAlignment.MiddleRight;
+            creditLabel.ForeColor = Color.FromArgb(120, 120, 120);
+            creditLabel.Font = new Font("Segoe UI", 8, FontStyle.Regular);
+            creditLabel.Text = "Created by Flex3Designs";
             statusPanel.Controls.Add(statusLabel);
+            statusPanel.Controls.Add(creditLabel);
 
             Controls.Add(grid);
             Controls.Add(topPanel);
@@ -605,92 +825,200 @@ namespace TempProfileFixer
 
         private void ShowHelpDialog()
         {
-            ShowTextDialog("Temp Profile Fixer Help / FAQ", BuildHelpText());
+            Form dialog = new Form();
+            dialog.Text = "Temp Profile Fixer Help / FAQ";
+            dialog.StartPosition = FormStartPosition.CenterParent;
+            dialog.Size = new Size(900, 620);
+            dialog.MinimumSize = new Size(760, 520);
+            dialog.MinimizeBox = false;
+            dialog.MaximizeBox = true;
+            if (appIcon != null)
+            {
+                dialog.Icon = appIcon;
+            }
+
+            Panel headerPanel = new Panel();
+            headerPanel.Dock = DockStyle.Top;
+            headerPanel.Height = 70;
+            headerPanel.Padding = new Padding(18, 12, 18, 8);
+            headerPanel.BackColor = Color.FromArgb(245, 248, 250);
+
+            Label title = new Label();
+            title.Text = "Temp Profile Fixer Help / FAQ";
+            title.Font = new Font("Segoe UI", 15, FontStyle.Bold);
+            title.AutoSize = true;
+            title.Location = new Point(18, 10);
+
+            Label summary = new Label();
+            summary.Text = "Quick reference for profile rebuilds, registry cleanup, command-line runs, and blocked states.";
+            summary.Font = new Font("Segoe UI", 9, FontStyle.Regular);
+            summary.ForeColor = Color.FromArgb(82, 88, 96);
+            summary.AutoSize = true;
+            summary.Location = new Point(20, 40);
+
+            headerPanel.Controls.Add(title);
+            headerPanel.Controls.Add(summary);
+
+            TabControl tabs = new TabControl();
+            tabs.Dock = DockStyle.Fill;
+            tabs.Font = new Font("Segoe UI", 9);
+            AddOverviewHelpTab(tabs);
+            AddButtonHelpTab(tabs);
+            AddRightClickHelpTab(tabs);
+            AddFaqHelpTab(tabs);
+            AddCommandLineHelpTab(tabs);
+
+            Button closeButton = new Button();
+            closeButton.Text = "Close";
+            closeButton.Width = 96;
+            closeButton.Height = 30;
+            closeButton.Anchor = AnchorStyles.Right | AnchorStyles.Top;
+            closeButton.Location = new Point(780, 10);
+            closeButton.Click += delegate { dialog.Close(); };
+
+            Panel buttonPanel = new Panel();
+            buttonPanel.Dock = DockStyle.Bottom;
+            buttonPanel.Height = 50;
+            buttonPanel.Padding = new Padding(12, 10, 12, 10);
+            buttonPanel.Controls.Add(closeButton);
+            buttonPanel.Resize += delegate
+            {
+                closeButton.Left = buttonPanel.ClientSize.Width - closeButton.Width - 12;
+            };
+
+            dialog.Controls.Add(tabs);
+            dialog.Controls.Add(buttonPanel);
+            dialog.Controls.Add(headerPanel);
+            dialog.ShowDialog(this);
         }
 
-        private static string BuildHelpText()
+        private static void AddOverviewHelpTab(TabControl tabs)
         {
-            StringBuilder help = new StringBuilder();
-            help.AppendLine("Temp Profile Fixer Help / FAQ");
-            help.AppendLine("=============================");
-            help.AppendLine();
-            help.AppendLine("Overview");
-            help.AppendLine("  This admin tool lists local profile folders from C:\\Users, matches each");
-            help.AppendLine("  folder to its base SID under HKLM\\...\\ProfileList, and shows whether");
-            help.AppendLine("  the matching normal and .bak registry keys exist.");
-            help.AppendLine();
-            help.AppendLine("Top buttons");
-            help.AppendLine("  Rebuild Profile");
-            help.AppendLine("    Exports the matching ProfileList registry keys, renames the selected");
-            help.AppendLine("    C:\\Users profile folder to .old<date>, deletes matching normal and");
-            help.AppendLine("    .bak registry keys, then starts the reboot flow after the rebuild");
-            help.AppendLine("    succeeds. Use this for the standard .old profile rebuild workflow.");
-            help.AppendLine();
-            help.AppendLine("  Delete Profile");
-            help.AppendLine("    Exports the matching ProfileList registry keys, permanently deletes");
-            help.AppendLine("    the selected C:\\Users profile folder, then deletes matching normal and");
-            help.AppendLine("    .bak registry keys. This does not create a .old folder copy.");
-            help.AppendLine();
-            help.AppendLine("  Refresh");
-            help.AppendLine("    Reloads the C:\\Users folder list, registry matches, loaded state, and");
-            help.AppendLine("    blocked status shown in the grid.");
-            help.AppendLine();
-            help.AppendLine("Right-click actions");
-            help.AppendLine("  Rebuild Profile");
-            help.AppendLine("    Same as the top Rebuild Profile button.");
-            help.AppendLine();
-            help.AppendLine("  Remove Registry Entry");
-            help.AppendLine("    Exports and deletes the selected profile's matching ProfileList keys");
-            help.AppendLine("    only. It does not rename or delete the profile folder.");
-            help.AppendLine();
-            help.AppendLine("  Copy Profile Path / Copy SID");
-            help.AppendLine("    Copies the selected row's profile folder path or base SID.");
-            help.AppendLine();
-            help.AppendLine("  Open to Registry");
-            help.AppendLine("    Opens Registry Editor at the selected profile's normal ProfileList key");
-            help.AppendLine("    when one is available.");
-            help.AppendLine();
-            help.AppendLine("  refresh");
-            help.AppendLine("    Same as the top Refresh button.");
-            help.AppendLine();
-            help.AppendLine("FAQ");
-            help.AppendLine("  Why are Rebuild Profile and Delete Profile greyed out?");
-            help.AppendLine("    The selected profile is blocked. Common reasons are that it is the");
-            help.AppendLine("    current admin profile, loaded/locked, special/system, missing a matching");
-            help.AppendLine("    SID, matched to multiple SIDs or normal keys, or Windows profile state");
-            help.AppendLine("    could not be verified.");
-            help.AppendLine();
-            help.AppendLine("  Does Rebuild Profile delete user files?");
-            help.AppendLine("    No. Rebuild Profile renames the profile folder to a timestamped .old");
-            help.AppendLine("    folder so it remains on disk as a rollback copy.");
-            help.AppendLine();
-            help.AppendLine("  Does Delete Profile keep the old folder?");
-            help.AppendLine("    No. Delete Profile permanently removes the selected profile folder after");
-            help.AppendLine("    confirmation. Registry backups and logs are still written.");
-            help.AppendLine();
-            help.AppendLine("  What happens to .bak registry keys?");
-            help.AppendLine("    Rebuild Profile, Delete Profile, and Remove Registry Entry include the");
-            help.AppendLine("    matching .bak key when one exists for the selected base SID.");
-            help.AppendLine();
-            help.AppendLine("  Why reboot after a rebuild?");
-            help.AppendLine("    The target user's next real sign-in after restart lets Windows create");
-            help.AppendLine("    and load a clean profile instead of reusing the old ProfileList state.");
-            help.AppendLine();
-            help.AppendLine("  Do I need the target user's password?");
-            help.AppendLine("    No. The tool does not attempt a fake login and does not collect target");
-            help.AppendLine("    user passwords.");
-            help.AppendLine();
-            help.AppendLine("  Where are backups and logs?");
-            help.AppendLine("    They are written next to the EXE under backups\\ and logs\\.");
-            help.AppendLine();
-            help.AppendLine("  Can I preview actions?");
-            help.AppendLine("    Double-click a row to show the rebuild plan without changing anything,");
-            help.AppendLine("    or run TempProfileFixer.exe dry-run --path C:\\Users\\SomeUser.");
-            help.AppendLine();
-            help.AppendLine("  Can I use the command line?");
-            help.AppendLine("    Yes. Supported commands include list, dry-run, rebuild, delete-profile,");
-            help.AppendLine("    remove-registry, and remove-bak.");
-            return help.ToString();
+            RichTextBox box = AddHelpTab(tabs, "Overview");
+            AppendHeading(box, "What this tool does");
+            AppendParagraph(box, "Temp Profile Fixer inventories profile folders under C:\\Users, matches each folder to its base SID under HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList, and shows normal/.bak registry state.");
+            AppendParagraph(box, "The rebuild workflow is designed for the common admin task of renaming a user profile to .old<date>, removing stale ProfileList state, and rebooting before the target user's next sign-in.");
+            AppendHeading(box, "Safety model");
+            AppendBullet(box, "Registry keys are exported before they are deleted.");
+            AppendBullet(box, "Rebuild preserves the old folder as a timestamped .old rollback copy.");
+            AppendBullet(box, "Loaded, current, special/system, missing, and ambiguous profiles are blocked.");
+            AppendBullet(box, "The tool does not collect the target user's password or attempt a fake login.");
+            AppendHeading(box, "Expected final step");
+            AppendParagraph(box, "After rebuild and reboot, have the target user sign in normally so Windows creates a clean local profile.");
+        }
+
+        private static void AddButtonHelpTab(TabControl tabs)
+        {
+            RichTextBox box = AddHelpTab(tabs, "Buttons");
+            AppendHeading(box, "Rebuild Profile");
+            AppendParagraph(box, "Runs the full .old rebuild: export matching ProfileList keys, rename the selected C:\\Users folder to .old<date>, delete matching normal and .bak registry keys, then start the reboot flow.");
+            AppendHeading(box, "Delete Profile");
+            AppendParagraph(box, "Permanently deletes the selected profile folder and matching ProfileList registry keys after confirmation. This action does not create a .old folder copy.");
+            AppendHeading(box, "Help / FAQ");
+            AppendParagraph(box, "Opens this formatted help window.");
+            AppendHeading(box, "Refresh");
+            AppendParagraph(box, "Reloads the C:\\Users inventory, registry matches, loaded/special profile state, and blocked/warning status.");
+        }
+
+        private static void AddRightClickHelpTab(TabControl tabs)
+        {
+            RichTextBox box = AddHelpTab(tabs, "Right-click");
+            AppendHeading(box, "Rebuild Profile");
+            AppendParagraph(box, "Same action as the top Rebuild Profile button.");
+            AppendHeading(box, "Remove Registry Entry");
+            AppendParagraph(box, "Exports and deletes the selected profile's matching normal and .bak ProfileList keys only. It does not rename or delete the profile folder.");
+            AppendHeading(box, "Open Profile Path");
+            AppendParagraph(box, "Opens the selected profile folder in File Explorer.");
+            AppendHeading(box, "Copy SID");
+            AppendParagraph(box, "Copies the selected row's base SID to the clipboard.");
+            AppendHeading(box, "Open to Registry");
+            AppendParagraph(box, "Opens Registry Editor at the selected profile's normal ProfileList key when one is available.");
+            AppendHeading(box, "Double-click a row");
+            AppendParagraph(box, "Shows the non-destructive rebuild plan for the selected profile.");
+        }
+
+        private static void AddFaqHelpTab(TabControl tabs)
+        {
+            RichTextBox box = AddHelpTab(tabs, "FAQ");
+            AppendHeading(box, "Why are Rebuild Profile and Delete Profile greyed out?");
+            AppendParagraph(box, "The selected profile is blocked. Common reasons are that it is the current admin profile, loaded/locked, special/system, missing a matching SID, matched to multiple SIDs or normal keys, or Windows profile state could not be verified.");
+            AppendHeading(box, "Does Rebuild Profile delete user files?");
+            AppendParagraph(box, "No. Rebuild Profile renames the selected folder to a timestamped .old folder so it remains on disk as a rollback copy.");
+            AppendHeading(box, "Does Delete Profile keep the old folder?");
+            AppendParagraph(box, "No. Delete Profile permanently removes the selected profile folder after confirmation. Registry backups and logs are still written.");
+            AppendHeading(box, "What happens to .bak keys?");
+            AppendParagraph(box, "Rebuild Profile, Delete Profile, and Remove Registry Entry include the matching .bak key when one exists for the selected base SID.");
+            AppendHeading(box, "Why reboot after a rebuild?");
+            AppendParagraph(box, "The reboot clears the workflow before the target user's next real sign-in. After restart, Windows can create and load a clean profile using fresh ProfileList state.");
+            AppendHeading(box, "Where are backups and logs?");
+            AppendParagraph(box, "Backups and logs are written next to the EXE under backups\\ and logs\\.");
+        }
+
+        private static void AddCommandLineHelpTab(TabControl tabs)
+        {
+            RichTextBox box = AddHelpTab(tabs, "Command line");
+            AppendHeading(box, "Local examples");
+            AppendCode(box, "TempProfileFixer.exe list");
+            AppendCode(box, "TempProfileFixer.exe dry-run --profile jsmith");
+            AppendCode(box, "TempProfileFixer.exe rebuild --profile jsmith --yes --reboot");
+            AppendHeading(box, "Remote examples");
+            AppendParagraph(box, "Use --computer when the admin share and Remote Registry/WMI access are available for the target workstation.");
+            AppendCode(box, "TempProfileFixer.exe list --computer PC-1234");
+            AppendCode(box, "TempProfileFixer.exe dry-run --computer PC-1234 --profile jsmith");
+            AppendCode(box, "TempProfileFixer.exe rebuild --computer PC-1234 --profile jsmith --yes --reboot");
+            AppendHeading(box, "More commands");
+            AppendParagraph(box, "The packaged README beside the EXE has the complete command reference with examples.");
+        }
+
+        private static RichTextBox AddHelpTab(TabControl tabs, string title)
+        {
+            TabPage page = new TabPage(title);
+            RichTextBox box = new RichTextBox();
+            box.Dock = DockStyle.Fill;
+            box.ReadOnly = true;
+            box.BorderStyle = BorderStyle.None;
+            box.BackColor = Color.White;
+            box.Font = new Font("Segoe UI", 10);
+            box.Margin = new Padding(0);
+            page.Padding = new Padding(18);
+            page.Controls.Add(box);
+            tabs.TabPages.Add(page);
+            return box;
+        }
+
+        private static void AppendHeading(RichTextBox box, string text)
+        {
+            if (box.TextLength > 0)
+            {
+                box.AppendText(Environment.NewLine);
+            }
+            AppendStyled(box, text + Environment.NewLine, new Font("Segoe UI", 12, FontStyle.Bold), Color.FromArgb(32, 77, 120));
+        }
+
+        private static void AppendParagraph(RichTextBox box, string text)
+        {
+            AppendStyled(box, text + Environment.NewLine, new Font("Segoe UI", 10, FontStyle.Regular), Color.FromArgb(35, 35, 35));
+        }
+
+        private static void AppendBullet(RichTextBox box, string text)
+        {
+            AppendStyled(box, "  - " + text + Environment.NewLine, new Font("Segoe UI", 10, FontStyle.Regular), Color.FromArgb(35, 35, 35));
+        }
+
+        private static void AppendCode(RichTextBox box, string text)
+        {
+            AppendStyled(box, "  " + text + Environment.NewLine, new Font("Consolas", 10, FontStyle.Regular), Color.FromArgb(82, 48, 120));
+        }
+
+        private static void AppendStyled(RichTextBox box, string text, Font font, Color color)
+        {
+            box.SelectionStart = box.TextLength;
+            box.SelectionLength = 0;
+            box.SelectionFont = font;
+            box.SelectionColor = color;
+            box.AppendText(text);
+            box.SelectionColor = box.ForeColor;
+            box.SelectionFont = box.Font;
         }
 
         private void AddColumn(string name, string header, int width)
@@ -778,7 +1106,7 @@ namespace TempProfileFixer
             rebuildMenuItem.Enabled = canRebuild;
             removeRegistryMenuItem.Enabled = hasSelection && selected.HasRegistryEntries && !selected.IsBlocked;
             copySidMenuItem.Enabled = hasSelection && !String.IsNullOrWhiteSpace(selected.BaseSid);
-            copyPathMenuItem.Enabled = hasSelection;
+            openProfilePathMenuItem.Enabled = hasSelection && Directory.Exists(selected.ProfilePath);
             openRegistryMenuItem.Enabled = hasSelection && selected.HasRegistryEntries;
         }
 
@@ -952,13 +1280,26 @@ namespace TempProfileFixer
             }
         }
 
-        private void CopySelectedPath()
+        private void OpenSelectedProfilePath()
         {
             ProfileRecord selected = GetSelectedProfile();
-            if (selected != null)
+            if (selected == null)
             {
-                Clipboard.SetText(selected.ProfilePath);
+                MessageBox.Show("Select a profile first.", "Open Profile Path", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
             }
+
+            if (!Directory.Exists(selected.ProfilePath))
+            {
+                MessageBox.Show("The selected profile path does not exist: " + selected.ProfilePath, "Open Profile Path", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            ProcessStartInfo startInfo = new ProcessStartInfo();
+            startInfo.FileName = "explorer.exe";
+            startInfo.Arguments = "\"" + selected.ProfilePath + "\"";
+            startInfo.UseShellExecute = true;
+            Process.Start(startInfo);
         }
 
         private void OpenSelectedRegistryKey()
@@ -1016,26 +1357,52 @@ namespace TempProfileFixer
 
         public static List<ProfileRecord> GetProfiles(string usersRoot)
         {
-            if (String.IsNullOrWhiteSpace(usersRoot))
+            return GetProfiles(ProfileTarget.Local(usersRoot));
+        }
+
+        public static List<ProfileRecord> GetProfiles(ProfileTarget target)
+        {
+            if (target == null)
             {
-                usersRoot = Path.Combine(Environment.GetEnvironmentVariable("SystemDrive") ?? "C:", "Users");
+                throw new ArgumentNullException("target");
             }
 
-            List<FolderRecord> folders = GetProfileFolders(usersRoot);
-            List<ProfileListEntry> entries = GetProfileListEntries();
+            List<FolderRecord> folders = GetProfileFolders(target);
+            List<ProfileListEntry> entries = GetProfileListEntries(target.ComputerName);
             string stateError;
-            List<UserProfileState> states = GetUserProfileStates(out stateError);
-            string currentSid = GetCurrentSid();
-            return BuildInventory(folders, entries, states, currentSid, stateError);
+            List<UserProfileState> states = GetUserProfileStates(target.ComputerName, out stateError);
+            string currentSid = target.IsRemote ? String.Empty : GetCurrentSid();
+            return BuildInventory(folders, entries, states, currentSid, stateError, target.RegistryPath);
         }
 
         public static ProfileRecord FindProfileByPath(string path, string usersRoot)
         {
+            return FindProfileByPath(path, ProfileTarget.Local(usersRoot));
+        }
+
+        public static ProfileRecord FindProfileByPath(string path, ProfileTarget target)
+        {
             string normalized = NormalizePath(path);
-            List<ProfileRecord> matches = GetProfiles(usersRoot).Where(p => p.NormalizedPath == normalized).ToList();
+            List<ProfileRecord> matches = GetProfiles(target)
+                .Where(p => p.NormalizedPath == normalized || p.ActualNormalizedPath == normalized)
+                .ToList();
             if (matches.Count != 1)
             {
                 throw new InvalidOperationException("Expected exactly one profile match for '" + path + "'; found " + matches.Count + ".");
+            }
+
+            return matches[0];
+        }
+
+        public static ProfileRecord FindProfileBySid(string sid, ProfileTarget target)
+        {
+            string baseSid = GetBaseSid(sid);
+            List<ProfileRecord> matches = GetProfiles(target)
+                .Where(p => String.Equals(p.BaseSid, baseSid, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (matches.Count != 1)
+            {
+                throw new InvalidOperationException("Expected exactly one profile match for SID '" + sid + "'; found " + matches.Count + ".");
             }
 
             return matches[0];
@@ -1059,6 +1426,7 @@ namespace TempProfileFixer
                 ProfilePath = profile.ProfilePath,
                 RenameTo = GetUniqueOldPath(profile.ProfilePath, now),
                 BaseSid = profile.BaseSid,
+                RegistryRoot = profile.RegistryRoot,
                 RegistryKeyNames = keys,
                 IsBlocked = profile.IsBlocked,
                 BlockReasons = new List<string>(profile.BlockReasons),
@@ -1089,6 +1457,7 @@ namespace TempProfileFixer
                 FolderName = profile.FolderName,
                 ProfilePath = profile.ProfilePath,
                 BaseSid = profile.BaseSid,
+                RegistryRoot = profile.RegistryRoot,
                 RegistryKeyNames = keys,
                 IsBlocked = blockReasons.Count > 0,
                 BlockReasons = blockReasons,
@@ -1119,6 +1488,7 @@ namespace TempProfileFixer
                 FolderName = profile.FolderName,
                 ProfilePath = profile.ProfilePath,
                 BaseSid = profile.BaseSid,
+                RegistryRoot = profile.RegistryRoot,
                 RegistryKeyNames = keys,
                 IsBlocked = blockReasons.Count > 0,
                 BlockReasons = blockReasons,
@@ -1128,7 +1498,12 @@ namespace TempProfileFixer
 
         public static RebuildResult RebuildProfile(string profilePath, string usersRoot)
         {
-            ProfileRecord profile = FindProfileByPath(profilePath, usersRoot);
+            return RebuildProfile(profilePath, ProfileTarget.Local(usersRoot));
+        }
+
+        public static RebuildResult RebuildProfile(string profilePath, ProfileTarget target)
+        {
+            ProfileRecord profile = FindProfileByPath(profilePath, target);
             RebuildPlan plan = CreateRebuildPlan(profile, DateTime.Now);
             if (plan.IsBlocked)
             {
@@ -1153,7 +1528,7 @@ namespace TempProfileFixer
                 {
                     string destination = Path.Combine(backupDirectory, keyName + ".reg");
                     WriteLog(logPath, "Exporting ProfileList key " + keyName + " to " + destination);
-                    ExportRegistryKey(keyName, destination);
+                    ExportRegistryKey(keyName, destination, target.ComputerName);
                 }
 
                 WriteLog(logPath, "Renaming " + plan.ProfilePath + " to " + plan.RenameTo);
@@ -1162,7 +1537,7 @@ namespace TempProfileFixer
                 foreach (string keyName in plan.RegistryKeyNames)
                 {
                     WriteLog(logPath, "Removing ProfileList key " + keyName);
-                    RemoveRegistryKey(keyName);
+                    RemoveRegistryKey(keyName, target.ComputerName);
                 }
 
                 WriteLog(logPath, "Rebuild completed successfully.");
@@ -1171,6 +1546,7 @@ namespace TempProfileFixer
                 {
                     ProfilePath = plan.ProfilePath,
                     RenamedTo = plan.RenameTo,
+                    RegistryRoot = plan.RegistryRoot,
                     RemovedKeys = new List<string>(plan.RegistryKeyNames),
                     BackupDirectory = backupDirectory,
                     LogPath = logPath,
@@ -1186,7 +1562,12 @@ namespace TempProfileFixer
 
         public static RegistryRemovalResult RemoveRegistryEntries(string profilePath, string usersRoot)
         {
-            ProfileRecord profile = FindProfileByPath(profilePath, usersRoot);
+            return RemoveRegistryEntries(profilePath, ProfileTarget.Local(usersRoot));
+        }
+
+        public static RegistryRemovalResult RemoveRegistryEntries(string profilePath, ProfileTarget target)
+        {
+            ProfileRecord profile = FindProfileByPath(profilePath, target);
             RegistryRemovalPlan plan = CreateRegistryRemovalPlan(profile);
             if (plan.IsBlocked)
             {
@@ -1208,9 +1589,9 @@ namespace TempProfileFixer
                 {
                     string destination = Path.Combine(backupDirectory, keyName + ".reg");
                     WriteLog(logPath, "Exporting ProfileList key " + keyName + " to " + destination);
-                    ExportRegistryKey(keyName, destination);
+                    ExportRegistryKey(keyName, destination, target.ComputerName);
                     WriteLog(logPath, "Removing ProfileList key " + keyName);
-                    RemoveRegistryKey(keyName);
+                    RemoveRegistryKey(keyName, target.ComputerName);
                 }
 
                 WriteLog(logPath, "Registry entry removal completed successfully.");
@@ -1218,6 +1599,7 @@ namespace TempProfileFixer
                 return new RegistryRemovalResult
                 {
                     ProfilePath = profile.ProfilePath,
+                    RegistryRoot = plan.RegistryRoot,
                     RemovedKeys = new List<string>(plan.RegistryKeyNames),
                     BackupDirectory = backupDirectory,
                     LogPath = logPath,
@@ -1233,7 +1615,12 @@ namespace TempProfileFixer
 
         public static DeleteProfileResult DeleteProfile(string profilePath, string usersRoot)
         {
-            ProfileRecord profile = FindProfileByPath(profilePath, usersRoot);
+            return DeleteProfile(profilePath, ProfileTarget.Local(usersRoot));
+        }
+
+        public static DeleteProfileResult DeleteProfile(string profilePath, ProfileTarget target)
+        {
+            ProfileRecord profile = FindProfileByPath(profilePath, target);
             DeleteProfilePlan plan = CreateDeleteProfilePlan(profile);
             if (plan.IsBlocked)
             {
@@ -1257,7 +1644,7 @@ namespace TempProfileFixer
                 {
                     string destination = Path.Combine(backupDirectory, keyName + ".reg");
                     WriteLog(logPath, "Exporting ProfileList key " + keyName + " to " + destination);
-                    ExportRegistryKey(keyName, destination);
+                    ExportRegistryKey(keyName, destination, target.ComputerName);
                 }
 
                 WriteLog(logPath, "Deleting profile folder " + plan.ProfilePath);
@@ -1266,7 +1653,7 @@ namespace TempProfileFixer
                 foreach (string keyName in plan.RegistryKeyNames)
                 {
                     WriteLog(logPath, "Removing ProfileList key " + keyName);
-                    RemoveRegistryKey(keyName);
+                    RemoveRegistryKey(keyName, target.ComputerName);
                 }
 
                 WriteLog(logPath, "Profile deletion completed successfully.");
@@ -1274,6 +1661,7 @@ namespace TempProfileFixer
                 return new DeleteProfileResult
                 {
                     ProfilePath = plan.ProfilePath,
+                    RegistryRoot = plan.RegistryRoot,
                     RemovedKeys = new List<string>(plan.RegistryKeyNames),
                     BackupDirectory = backupDirectory,
                     LogPath = logPath,
@@ -1289,7 +1677,12 @@ namespace TempProfileFixer
 
         public static BakRemovalResult RemoveBakKeys(string profilePath, string usersRoot)
         {
-            ProfileRecord profile = FindProfileByPath(profilePath, usersRoot);
+            return RemoveBakKeys(profilePath, ProfileTarget.Local(usersRoot));
+        }
+
+        public static BakRemovalResult RemoveBakKeys(string profilePath, ProfileTarget target)
+        {
+            ProfileRecord profile = FindProfileByPath(profilePath, target);
             if (!profile.BakKeyPresent)
             {
                 throw new InvalidOperationException("No .bak ProfileList key was found for " + profile.ProfilePath + ".");
@@ -1310,9 +1703,9 @@ namespace TempProfileFixer
                 {
                     string destination = Path.Combine(backupDirectory, keyName + ".reg");
                     WriteLog(logPath, "Exporting ProfileList key " + keyName + " to " + destination);
-                    ExportRegistryKey(keyName, destination);
+                    ExportRegistryKey(keyName, destination, target.ComputerName);
                     WriteLog(logPath, "Removing ProfileList key " + keyName);
-                    RemoveRegistryKey(keyName);
+                    RemoveRegistryKey(keyName, target.ComputerName);
                 }
 
                 WriteLog(logPath, ".bak removal completed successfully.");
@@ -1320,6 +1713,7 @@ namespace TempProfileFixer
                 return new BakRemovalResult
                 {
                     ProfilePath = profile.ProfilePath,
+                    RegistryRoot = profile.RegistryRoot,
                     RemovedKeys = new List<string>(profile.BakKeyNames),
                     BackupDirectory = backupDirectory,
                     LogPath = logPath,
@@ -1335,9 +1729,15 @@ namespace TempProfileFixer
 
         public static void RebootComputer()
         {
+            RebootComputer(null);
+        }
+
+        public static void RebootComputer(string computerName)
+        {
             ProcessStartInfo startInfo = new ProcessStartInfo();
             startInfo.FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "shutdown.exe");
-            startInfo.Arguments = "/r /t 0 /c \"Temp Profile Fixer requested reboot after profile rebuild.\"";
+            string target = IsRemoteComputer(computerName) ? " /m \\\\" + computerName.Trim().TrimStart('\\') : String.Empty;
+            startInfo.Arguments = "/r" + target + " /t 0 /c \"Temp Profile Fixer requested reboot after profile rebuild.\"";
             startInfo.UseShellExecute = false;
             startInfo.CreateNoWindow = true;
             Process.Start(startInfo);
@@ -1444,11 +1844,31 @@ namespace TempProfileFixer
             return sidOrKeyName ?? String.Empty;
         }
 
-        private static List<FolderRecord> GetProfileFolders(string usersRoot)
+        public static string GetProfileListRegPath(string computerName)
         {
-            if (!Directory.Exists(usersRoot))
+            return IsRemoteComputer(computerName)
+                ? @"\\" + computerName.Trim().TrimStart('\\') + @"\HKLM\" + ProfileListRegistryPath
+                : ProfileListRegPath;
+        }
+
+        public static bool IsRemoteComputer(string computerName)
+        {
+            if (String.IsNullOrWhiteSpace(computerName))
             {
-                throw new DirectoryNotFoundException("Users root '" + usersRoot + "' was not found.");
+                return false;
+            }
+
+            string normalized = computerName.Trim().TrimStart('\\').TrimEnd('\\');
+            return !String.Equals(normalized, ".", StringComparison.OrdinalIgnoreCase) &&
+                !String.Equals(normalized, "localhost", StringComparison.OrdinalIgnoreCase) &&
+                !String.Equals(normalized, Environment.MachineName, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static List<FolderRecord> GetProfileFolders(ProfileTarget target)
+        {
+            if (!Directory.Exists(target.UsersRoot))
+            {
+                throw new DirectoryNotFoundException("Users root '" + target.UsersRoot + "' was not found.");
             }
 
             HashSet<string> excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -1462,7 +1882,7 @@ namespace TempProfileFixer
                 "Public"
             };
 
-            return new DirectoryInfo(usersRoot)
+            return new DirectoryInfo(target.UsersRoot)
                 .GetDirectories()
                 .Where(d => !excluded.Contains(d.Name) && !OldProfileRegex.IsMatch(d.Name))
                 .OrderBy(d => d.Name)
@@ -1470,21 +1890,22 @@ namespace TempProfileFixer
                 {
                     Name = d.Name,
                     FullName = d.FullName,
-                    NormalizedPath = NormalizePath(d.FullName)
+                    ActualNormalizedPath = NormalizePath(d.FullName),
+                    NormalizedPath = NormalizePath(target.GetLogicalPathForFolder(d.Name))
                 })
                 .ToList();
         }
 
-        private static List<ProfileListEntry> GetProfileListEntries()
+        private static List<ProfileListEntry> GetProfileListEntries(string computerName)
         {
             List<ProfileListEntry> entries = new List<ProfileListEntry>();
             RegistryView view = Environment.Is64BitOperatingSystem ? RegistryView.Registry64 : RegistryView.Default;
-            using (RegistryKey localMachine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view))
+            using (RegistryKey localMachine = OpenLocalMachine(computerName, view))
             using (RegistryKey profileList = localMachine.OpenSubKey(ProfileListRegistryPath, false))
             {
                 if (profileList == null)
                 {
-                    throw new InvalidOperationException(ProfileListRegPath + " was not found.");
+                    throw new InvalidOperationException(GetProfileListRegPath(computerName) + " was not found.");
                 }
 
                 foreach (string keyName in profileList.GetSubKeyNames().OrderBy(n => n))
@@ -1514,14 +1935,27 @@ namespace TempProfileFixer
             return entries;
         }
 
-        private static List<UserProfileState> GetUserProfileStates(out string error)
+        private static List<UserProfileState> GetUserProfileStates(string computerName, out string error)
         {
             List<UserProfileState> states = new List<UserProfileState>();
             error = null;
 
             try
             {
-                using (ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT SID, LocalPath, Loaded, Special FROM Win32_UserProfile"))
+                ObjectQuery query = new ObjectQuery("SELECT SID, LocalPath, Loaded, Special FROM Win32_UserProfile");
+                ManagementObjectSearcher searcher;
+                if (IsRemoteComputer(computerName))
+                {
+                    ManagementScope scope = new ManagementScope("\\\\" + computerName.Trim().TrimStart('\\') + "\\root\\cimv2");
+                    scope.Connect();
+                    searcher = new ManagementObjectSearcher(scope, query);
+                }
+                else
+                {
+                    searcher = new ManagementObjectSearcher(query);
+                }
+
+                using (searcher)
                 using (ManagementObjectCollection results = searcher.Get())
                 {
                     foreach (ManagementObject profile in results)
@@ -1552,7 +1986,8 @@ namespace TempProfileFixer
             List<ProfileListEntry> entries,
             List<UserProfileState> states,
             string currentSid,
-            string stateError)
+            string stateError,
+            string registryRoot)
         {
             Dictionary<string, UserProfileState> statesBySid = states
                 .Where(s => !String.IsNullOrWhiteSpace(s.Sid))
@@ -1666,6 +2101,8 @@ namespace TempProfileFixer
                     FolderName = folder.Name,
                     ProfilePath = folder.FullName,
                     NormalizedPath = folder.NormalizedPath,
+                    ActualNormalizedPath = folder.ActualNormalizedPath,
+                    RegistryRoot = registryRoot,
                     BaseSid = baseSid,
                     MatchingSidCount = baseSids.Count,
                     NormalKeyNames = normalEntries.Select(e => e.KeyName).ToList(),
@@ -1705,9 +2142,16 @@ namespace TempProfileFixer
             throw new InvalidOperationException("Could not find an available .old path for '" + profilePath + "'.");
         }
 
-        private static void ExportRegistryKey(string keyName, string destinationPath)
+        private static RegistryKey OpenLocalMachine(string computerName, RegistryView view)
         {
-            string regPath = ProfileListRegPath + "\\" + keyName;
+            return IsRemoteComputer(computerName)
+                ? RegistryKey.OpenRemoteBaseKey(RegistryHive.LocalMachine, computerName.Trim().TrimStart('\\'), view)
+                : RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view);
+        }
+
+        private static void ExportRegistryKey(string keyName, string destinationPath, string computerName)
+        {
+            string regPath = GetProfileListRegPath(computerName) + "\\" + keyName;
             ProcessStartInfo startInfo = new ProcessStartInfo();
             startInfo.FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "reg.exe");
             startInfo.Arguments = "export \"" + regPath + "\" \"" + destinationPath + "\" /y";
@@ -1721,15 +2165,15 @@ namespace TempProfileFixer
             }
         }
 
-        private static void RemoveRegistryKey(string keyName)
+        private static void RemoveRegistryKey(string keyName, string computerName)
         {
             RegistryView view = Environment.Is64BitOperatingSystem ? RegistryView.Registry64 : RegistryView.Default;
-            using (RegistryKey localMachine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view))
+            using (RegistryKey localMachine = OpenLocalMachine(computerName, view))
             using (RegistryKey profileList = localMachine.OpenSubKey(ProfileListRegistryPath, true))
             {
                 if (profileList == null)
                 {
-                    throw new InvalidOperationException(ProfileListRegPath + " was not found.");
+                    throw new InvalidOperationException(GetProfileListRegPath(computerName) + " was not found.");
                 }
 
                 if (profileList.GetSubKeyNames().Any(k => String.Equals(k, keyName, StringComparison.OrdinalIgnoreCase)))
@@ -1802,6 +2246,7 @@ namespace TempProfileFixer
         public string Name { get; set; }
         public string FullName { get; set; }
         public string NormalizedPath { get; set; }
+        public string ActualNormalizedPath { get; set; }
     }
 
     internal sealed class ProfileListEntry
@@ -1829,6 +2274,8 @@ namespace TempProfileFixer
         public string FolderName { get; set; }
         public string ProfilePath { get; set; }
         public string NormalizedPath { get; set; }
+        public string ActualNormalizedPath { get; set; }
+        public string RegistryRoot { get; set; }
         public string BaseSid { get; set; }
         public int MatchingSidCount { get; set; }
         public List<string> NormalKeyNames { get; set; }
@@ -1856,6 +2303,7 @@ namespace TempProfileFixer
         public string FolderName { get; set; }
         public string ProfilePath { get; set; }
         public string BaseSid { get; set; }
+        public string RegistryRoot { get; set; }
         public List<string> RegistryKeyNames { get; set; }
         public bool IsBlocked { get; set; }
         public List<string> BlockReasons { get; set; }
@@ -1879,7 +2327,7 @@ namespace TempProfileFixer
             builder.AppendLine("Registry keys to export and delete:");
             foreach (string keyName in RegistryKeyNames ?? new List<string>())
             {
-                builder.AppendLine("  " + ProfileService.ProfileListRegPath + "\\" + keyName);
+                builder.AppendLine("  " + RegistryRoot + "\\" + keyName);
             }
             builder.AppendLine();
             if (IsBlocked)
@@ -1899,6 +2347,7 @@ namespace TempProfileFixer
         public string FolderName { get; set; }
         public string ProfilePath { get; set; }
         public string BaseSid { get; set; }
+        public string RegistryRoot { get; set; }
         public List<string> RegistryKeyNames { get; set; }
         public bool IsBlocked { get; set; }
         public List<string> BlockReasons { get; set; }
@@ -1922,7 +2371,7 @@ namespace TempProfileFixer
             builder.AppendLine("Registry keys to export and delete:");
             foreach (string keyName in RegistryKeyNames ?? new List<string>())
             {
-                builder.AppendLine("  " + ProfileService.ProfileListRegPath + "\\" + keyName);
+                builder.AppendLine("  " + RegistryRoot + "\\" + keyName);
             }
             builder.AppendLine();
             if (IsBlocked)
@@ -1943,6 +2392,7 @@ namespace TempProfileFixer
         public string ProfilePath { get; set; }
         public string RenameTo { get; set; }
         public string BaseSid { get; set; }
+        public string RegistryRoot { get; set; }
         public List<string> RegistryKeyNames { get; set; }
         public bool IsBlocked { get; set; }
         public List<string> BlockReasons { get; set; }
@@ -1967,7 +2417,7 @@ namespace TempProfileFixer
             builder.AppendLine("Registry keys to export and delete:");
             foreach (string keyName in RegistryKeyNames ?? new List<string>())
             {
-                builder.AppendLine("  " + ProfileService.ProfileListRegPath + "\\" + keyName);
+                builder.AppendLine("  " + RegistryRoot + "\\" + keyName);
             }
             builder.AppendLine();
             if (IsBlocked)
@@ -1985,6 +2435,7 @@ namespace TempProfileFixer
     internal sealed class RegistryRemovalResult
     {
         public string ProfilePath { get; set; }
+        public string RegistryRoot { get; set; }
         public List<string> RemovedKeys { get; set; }
         public string BackupDirectory { get; set; }
         public string LogPath { get; set; }
@@ -1999,7 +2450,7 @@ namespace TempProfileFixer
             builder.AppendLine("Removed keys:");
             foreach (string keyName in RemovedKeys ?? new List<string>())
             {
-                builder.AppendLine("  " + ProfileService.ProfileListRegPath + "\\" + keyName);
+                builder.AppendLine("  " + RegistryRoot + "\\" + keyName);
             }
             builder.AppendLine("Backup folder: " + BackupDirectory);
             builder.AppendLine("Log: " + LogPath);
@@ -2010,6 +2461,7 @@ namespace TempProfileFixer
     internal sealed class DeleteProfileResult
     {
         public string ProfilePath { get; set; }
+        public string RegistryRoot { get; set; }
         public List<string> RemovedKeys { get; set; }
         public string BackupDirectory { get; set; }
         public string LogPath { get; set; }
@@ -2024,7 +2476,7 @@ namespace TempProfileFixer
             builder.AppendLine("Removed keys:");
             foreach (string keyName in RemovedKeys ?? new List<string>())
             {
-                builder.AppendLine("  " + ProfileService.ProfileListRegPath + "\\" + keyName);
+                builder.AppendLine("  " + RegistryRoot + "\\" + keyName);
             }
             builder.AppendLine("Registry backup folder: " + BackupDirectory);
             builder.AppendLine("Log: " + LogPath);
@@ -2036,6 +2488,7 @@ namespace TempProfileFixer
     {
         public string ProfilePath { get; set; }
         public string RenamedTo { get; set; }
+        public string RegistryRoot { get; set; }
         public List<string> RemovedKeys { get; set; }
         public string BackupDirectory { get; set; }
         public string LogPath { get; set; }
@@ -2051,7 +2504,7 @@ namespace TempProfileFixer
             builder.AppendLine("Removed keys:");
             foreach (string keyName in RemovedKeys ?? new List<string>())
             {
-                builder.AppendLine("  " + ProfileService.ProfileListRegPath + "\\" + keyName);
+                builder.AppendLine("  " + RegistryRoot + "\\" + keyName);
             }
             builder.AppendLine("Backup folder: " + BackupDirectory);
             builder.AppendLine("Log: " + LogPath);
@@ -2064,6 +2517,7 @@ namespace TempProfileFixer
     internal sealed class BakRemovalResult
     {
         public string ProfilePath { get; set; }
+        public string RegistryRoot { get; set; }
         public List<string> RemovedKeys { get; set; }
         public string BackupDirectory { get; set; }
         public string LogPath { get; set; }
@@ -2078,7 +2532,7 @@ namespace TempProfileFixer
             builder.AppendLine("Removed .bak keys:");
             foreach (string keyName in RemovedKeys ?? new List<string>())
             {
-                builder.AppendLine("  " + ProfileService.ProfileListRegPath + "\\" + keyName);
+                builder.AppendLine("  " + RegistryRoot + "\\" + keyName);
             }
             builder.AppendLine("Backup folder: " + BackupDirectory);
             builder.AppendLine("Log: " + LogPath);

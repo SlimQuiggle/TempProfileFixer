@@ -63,6 +63,12 @@ if ($LASTEXITCODE -ne 0) {
 if (($helpOutput -join "`n") -notmatch 'delete-profile') {
     throw 'help command did not advertise delete-profile.'
 }
+if (($helpOutput -join "`n") -notmatch '--computer') {
+    throw 'help command did not advertise remote computer targeting.'
+}
+if (($helpOutput -join "`n") -notmatch '--profile') {
+    throw 'help command did not advertise profile-name targeting.'
+}
 
 $dryRunOutput = & $exe dry-run --path $env:USERPROFILE 2>&1
 if ($LASTEXITCODE -ne 0) {
@@ -73,6 +79,15 @@ if (($dryRunOutput -join "`n") -notmatch 'Blocked') {
 }
 if (($dryRunOutput -join "`n") -notmatch '\.old\d{8}-\d{6}') {
     throw 'dry-run did not show the expected .old<date> rename target.'
+}
+
+$profileName = Split-Path -Leaf $env:USERPROFILE
+$profileDryRunOutput = & $exe dry-run --profile $profileName 2>&1
+if ($LASTEXITCODE -ne 0) {
+    throw "dry-run by profile name failed: $profileDryRunOutput"
+}
+if (($profileDryRunOutput -join "`n") -notmatch 'Blocked') {
+    throw 'dry-run by profile name for the current profile should be blocked.'
 }
 
 Write-Host 'Smoke tests passed.'
