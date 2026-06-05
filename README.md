@@ -51,6 +51,10 @@ Right-click a profile row for actions:
 - open to registry
 - refresh
 
+The top `Rebuild Profile` button runs the full rebuild for the highlighted
+profile: rename the folder to `.old<date>`, export/delete matching ProfileList
+registry entries, then start the reboot after the rebuild succeeds.
+
 ## Command line
 
 List detected local profile folders and matched SIDs:
@@ -65,7 +69,8 @@ Preview the exact rename and registry actions for a profile folder:
 .\dist\TempProfileFixer.exe dry-run --path C:\Users\SomeUser
 ```
 
-Rebuild a profile from an elevated command prompt:
+Rebuild a profile from an elevated command prompt. The GUI starts reboot after a
+successful rebuild; the CLI prompts unless `--reboot` is passed.
 
 ```powershell
 .\dist\TempProfileFixer.exe rebuild --path C:\Users\SomeUser

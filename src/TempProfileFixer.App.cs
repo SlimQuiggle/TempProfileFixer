@@ -451,7 +451,7 @@ namespace TempProfileFixer
             titleLabel.Location = new Point(84, 13);
 
             Label subtitleLabel = new Label();
-            subtitleLabel.Text = "Rename a local profile to .old<date>, export/delete matching ProfileList keys, and prompt for reboot.";
+            subtitleLabel.Text = "Rename a local profile to .old<date>, delete matching ProfileList keys, then reboot.";
             subtitleLabel.AutoSize = true;
             subtitleLabel.Location = new Point(86, 43);
 
@@ -477,7 +477,7 @@ namespace TempProfileFixer
             rebuildButton.Height = 30;
             rebuildButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             rebuildButton.Location = new Point(1004, 20);
-            rebuildButton.Click += delegate { RebuildSelectedProfile(); };
+            rebuildButton.Click += delegate { RebuildSelectedProfileAndReboot(); };
 
             topPanel.Controls.Add(headerIcon);
             topPanel.Controls.Add(titleLabel);
@@ -510,7 +510,7 @@ namespace TempProfileFixer
             AddColumn("Status", "Status", 270);
 
             ContextMenuStrip contextMenu = new ContextMenuStrip();
-            rebuildMenuItem = new ToolStripMenuItem("Rebuild Profile", null, delegate { RebuildSelectedProfile(); });
+            rebuildMenuItem = new ToolStripMenuItem("Rebuild Profile", null, delegate { RebuildSelectedProfileAndReboot(); });
             removeRegistryMenuItem = new ToolStripMenuItem("Remove Registry Entry", null, delegate { RemoveSelectedRegistryEntries(); });
             copyPathMenuItem = new ToolStripMenuItem("Copy Profile Path", null, delegate { CopySelectedPath(); });
             copySidMenuItem = new ToolStripMenuItem("Copy SID", null, delegate { CopySelectedSid(); });
@@ -656,7 +656,7 @@ namespace TempProfileFixer
             ShowTextDialog("Dry Run / Rebuild Plan", plan.ToDisplayText());
         }
 
-        private void RebuildSelectedProfile()
+        private void RebuildSelectedProfileAndReboot()
         {
             ProfileRecord selected = GetSelectedProfile();
             if (selected == null)
@@ -673,7 +673,12 @@ namespace TempProfileFixer
             }
 
             DialogResult confirm = MessageBox.Show(
-                plan.ToDisplayText() + Environment.NewLine + Environment.NewLine + "Continue?",
+                plan.ToDisplayText() +
+                Environment.NewLine +
+                "After the rebuild succeeds, this tool will start a reboot so the target user can sign in cleanly after restart." +
+                Environment.NewLine +
+                Environment.NewLine +
+                "Continue?",
                 "Confirm profile rebuild",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Warning,
@@ -688,20 +693,14 @@ namespace TempProfileFixer
                 statusLabel.Text = "Rebuilding " + selected.FolderName + "...";
                 Refresh();
                 RebuildResult result = ProfileService.RebuildProfile(selected.ProfilePath, usersRoot);
-                MessageBox.Show(result.ToDisplayText(), "Rebuild completed", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(
+                    result.ToDisplayText() + Environment.NewLine + "Click OK to start the reboot now.",
+                    "Rebuild completed",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
 
-                DialogResult reboot = MessageBox.Show(
-                    "Rebuild completed. Reboot now so the target user can sign in cleanly after restart?",
-                    "Reboot now?",
-                    MessageBoxButtons.YesNo,
-                    MessageBoxIcon.Question,
-                    MessageBoxDefaultButton.Button2);
-                if (reboot == DialogResult.Yes)
-                {
-                    ProfileService.RebootComputer();
-                }
-
-                RefreshProfiles();
+                statusLabel.Text = "Rebuild completed. Starting reboot...";
+                ProfileService.RebootComputer();
             }
             catch (Exception ex)
             {
