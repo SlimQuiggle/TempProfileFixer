@@ -117,6 +117,34 @@ namespace TempProfileFixer
                 return 0;
             }
 
+            if (command == "remove-registry" || command == "remove-reg" || command == "delete-registry")
+            {
+                string path = parsed.GetPath();
+                if (String.IsNullOrWhiteSpace(path))
+                {
+                    throw new InvalidOperationException("remove-registry requires --path C:\\Users\\<name>.");
+                }
+
+                ProfileRecord profile = ProfileService.FindProfileByPath(path, usersRoot);
+                RegistryRemovalPlan plan = ProfileService.CreateRegistryRemovalPlan(profile);
+                Console.WriteLine(plan.ToDisplayText());
+
+                if (plan.IsBlocked)
+                {
+                    throw new InvalidOperationException("Registry removal is blocked: " + String.Join("; ", plan.BlockReasons.ToArray()));
+                }
+
+                if (!parsed.HasFlag("yes") && !ConfirmTyped("Type REMOVEREGISTRY to delete the listed ProfileList key(s): ", "REMOVEREGISTRY"))
+                {
+                    Console.WriteLine("Cancelled.");
+                    return 2;
+                }
+
+                RegistryRemovalResult result = ProfileService.RemoveRegistryEntries(path, usersRoot);
+                Console.WriteLine(result.ToDisplayText());
+                return 0;
+            }
+
             if (command == "remove-bak" || command == "fix-bak")
             {
                 string path = parsed.GetPath();
@@ -221,9 +249,10 @@ namespace TempProfileFixer
             Console.WriteLine("  TempProfileFixer.exe list [--users-root C:\\Users]");
             Console.WriteLine("  TempProfileFixer.exe dry-run --path C:\\Users\\SomeUser");
             Console.WriteLine("  TempProfileFixer.exe rebuild --path C:\\Users\\SomeUser [--yes] [--reboot] [--no-reboot-prompt]");
+            Console.WriteLine("  TempProfileFixer.exe remove-registry --path C:\\Users\\SomeUser [--yes]");
             Console.WriteLine("  TempProfileFixer.exe remove-bak --path C:\\Users\\SomeUser [--yes]");
             Console.WriteLine();
-            Console.WriteLine("rebuild renames the profile folder to .old, exports/deletes the matching normal SID key");
+            Console.WriteLine("rebuild renames the profile folder to .old<date>, exports/deletes the matching normal SID key");
             Console.WriteLine("and matching .bak key, then prompts for reboot.");
         }
     }
@@ -358,11 +387,12 @@ namespace TempProfileFixer
         private readonly Button rebuildButton;
         private readonly Button dryRunButton;
         private readonly ToolStripMenuItem rebuildMenuItem;
-        private readonly ToolStripMenuItem dryRunMenuItem;
-        private readonly ToolStripMenuItem removeBakMenuItem;
+        private readonly ToolStripMenuItem removeRegistryMenuItem;
         private readonly ToolStripMenuItem copySidMenuItem;
         private readonly ToolStripMenuItem copyPathMenuItem;
-        private readonly ToolStripMenuItem openFolderMenuItem;
+        private readonly ToolStripMenuItem openRegistryMenuItem;
+        private readonly NotifyIcon trayIcon;
+        private readonly Icon appIcon;
         private List<ProfileRecord> profiles = new List<ProfileRecord>();
 
         public MainForm()
@@ -373,6 +403,32 @@ namespace TempProfileFixer
             StartPosition = FormStartPosition.CenterScreen;
             Size = new Size(1220, 700);
             MinimumSize = new Size(1040, 560);
+            appIcon = ProfileService.LoadApplicationIcon();
+            if (appIcon != null)
+            {
+                Icon = appIcon;
+            }
+
+            trayIcon = new NotifyIcon();
+            trayIcon.Text = "Temp Profile Fixer";
+            trayIcon.Icon = appIcon ?? SystemIcons.Application;
+            trayIcon.Visible = true;
+            trayIcon.DoubleClick += delegate
+            {
+                Show();
+                WindowState = FormWindowState.Normal;
+                Activate();
+            };
+            ContextMenuStrip trayMenu = new ContextMenuStrip();
+            trayMenu.Items.Add("Show", null, delegate
+            {
+                Show();
+                WindowState = FormWindowState.Normal;
+                Activate();
+            });
+            trayMenu.Items.Add("Refresh", null, delegate { RefreshProfiles(); });
+            trayMenu.Items.Add("Exit", null, delegate { Close(); });
+            trayIcon.ContextMenuStrip = trayMenu;
 
             Panel topPanel = new Panel();
             topPanel.Dock = DockStyle.Top;
@@ -386,7 +442,7 @@ namespace TempProfileFixer
             titleLabel.Location = new Point(12, 9);
 
             Label subtitleLabel = new Label();
-            subtitleLabel.Text = "Rename a local profile to .old, export/delete matching ProfileList keys, and prompt for reboot.";
+            subtitleLabel.Text = "Rename a local profile to .old<date>, export/delete matching ProfileList keys, and prompt for reboot.";
             subtitleLabel.AutoSize = true;
             subtitleLabel.Location = new Point(14, 39);
 
@@ -407,7 +463,7 @@ namespace TempProfileFixer
             dryRunButton.Click += delegate { ShowSelectedPlan(); };
 
             rebuildButton = new Button();
-            rebuildButton.Text = "Rebuild Selected";
+            rebuildButton.Text = "Rebuild Profile";
             rebuildButton.Width = 140;
             rebuildButton.Height = 30;
             rebuildButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
@@ -444,23 +500,21 @@ namespace TempProfileFixer
             AddColumn("Status", "Status", 270);
 
             ContextMenuStrip contextMenu = new ContextMenuStrip();
-            dryRunMenuItem = new ToolStripMenuItem("Dry Run / Show Plan", null, delegate { ShowSelectedPlan(); });
             rebuildMenuItem = new ToolStripMenuItem("Rebuild Profile", null, delegate { RebuildSelectedProfile(); });
-            removeBakMenuItem = new ToolStripMenuItem("Remove .bak Key(s)", null, delegate { RemoveSelectedBakKeys(); });
-            copySidMenuItem = new ToolStripMenuItem("Copy Base SID", null, delegate { CopySelectedSid(); });
+            removeRegistryMenuItem = new ToolStripMenuItem("Remove Registry Entry", null, delegate { RemoveSelectedRegistryEntries(); });
             copyPathMenuItem = new ToolStripMenuItem("Copy Profile Path", null, delegate { CopySelectedPath(); });
-            openFolderMenuItem = new ToolStripMenuItem("Open Profile Folder", null, delegate { OpenSelectedFolder(); });
+            copySidMenuItem = new ToolStripMenuItem("Copy SID", null, delegate { CopySelectedSid(); });
+            openRegistryMenuItem = new ToolStripMenuItem("Open to Registry", null, delegate { OpenSelectedRegistryKey(); });
             contextMenu.Items.AddRange(new ToolStripItem[]
             {
-                dryRunMenuItem,
                 rebuildMenuItem,
-                removeBakMenuItem,
+                removeRegistryMenuItem,
                 new ToolStripSeparator(),
                 copyPathMenuItem,
                 copySidMenuItem,
-                openFolderMenuItem,
+                openRegistryMenuItem,
                 new ToolStripSeparator(),
-                new ToolStripMenuItem("Refresh", null, delegate { RefreshProfiles(); })
+                new ToolStripMenuItem("refresh", null, delegate { RefreshProfiles(); })
             });
             contextMenu.Opening += delegate { UpdateActionState(); };
             grid.ContextMenuStrip = contextMenu;
@@ -478,6 +532,15 @@ namespace TempProfileFixer
             Controls.Add(topPanel);
             Controls.Add(statusPanel);
             Shown += delegate { RefreshProfiles(); };
+            FormClosed += delegate
+            {
+                trayIcon.Visible = false;
+                trayIcon.Dispose();
+                if (appIcon != null)
+                {
+                    appIcon.Dispose();
+                }
+            };
         }
 
         private void AddColumn(string name, string header, int width)
@@ -559,12 +622,11 @@ namespace TempProfileFixer
             bool hasSelection = selected != null;
             dryRunButton.Enabled = hasSelection;
             rebuildButton.Enabled = hasSelection && !selected.IsBlocked;
-            dryRunMenuItem.Enabled = hasSelection;
             rebuildMenuItem.Enabled = hasSelection && !selected.IsBlocked;
-            removeBakMenuItem.Enabled = hasSelection && selected.BakKeyPresent;
+            removeRegistryMenuItem.Enabled = hasSelection && selected.HasRegistryEntries && !selected.IsBlocked;
             copySidMenuItem.Enabled = hasSelection && !String.IsNullOrWhiteSpace(selected.BaseSid);
             copyPathMenuItem.Enabled = hasSelection;
-            openFolderMenuItem.Enabled = hasSelection && Directory.Exists(selected.ProfilePath);
+            openRegistryMenuItem.Enabled = hasSelection && selected.HasRegistryEntries;
         }
 
         private void ShowSelectedPlan()
@@ -634,24 +696,23 @@ namespace TempProfileFixer
             }
         }
 
-        private void RemoveSelectedBakKeys()
+        private void RemoveSelectedRegistryEntries()
         {
             ProfileRecord selected = GetSelectedProfile();
-            if (selected == null || !selected.BakKeyPresent)
+            if (selected == null || !selected.HasRegistryEntries)
             {
-                MessageBox.Show("Select a profile that has a .bak ProfileList key.", "Remove .bak Key(s)", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("Select a profile that has a matching ProfileList registry entry.", "Remove Registry Entry", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
-            StringBuilder text = new StringBuilder();
-            text.AppendLine("Export and delete these .bak ProfileList key(s)?");
-            text.AppendLine();
-            foreach (string keyName in selected.BakKeyNames)
+            RegistryRemovalPlan plan = ProfileService.CreateRegistryRemovalPlan(selected);
+            if (plan.IsBlocked)
             {
-                text.AppendLine("  " + ProfileService.ProfileListRegPath + "\\" + keyName);
+                MessageBox.Show(String.Join(Environment.NewLine, plan.BlockReasons.ToArray()), "Registry removal is blocked", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
             }
 
-            DialogResult confirm = MessageBox.Show(text.ToString(), "Confirm .bak removal", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+            DialogResult confirm = MessageBox.Show(plan.ToDisplayText() + Environment.NewLine + "Continue?", "Confirm registry removal", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
             if (confirm != DialogResult.Yes)
             {
                 return;
@@ -659,13 +720,13 @@ namespace TempProfileFixer
 
             try
             {
-                BakRemovalResult result = ProfileService.RemoveBakKeys(selected.ProfilePath, usersRoot);
-                MessageBox.Show(result.ToDisplayText(), ".bak removal completed", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                RegistryRemovalResult result = ProfileService.RemoveRegistryEntries(selected.ProfilePath, usersRoot);
+                MessageBox.Show(result.ToDisplayText(), "Registry removal completed", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 RefreshProfiles();
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, ".bak removal failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(ex.Message, "Registry removal failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -687,12 +748,12 @@ namespace TempProfileFixer
             }
         }
 
-        private void OpenSelectedFolder()
+        private void OpenSelectedRegistryKey()
         {
             ProfileRecord selected = GetSelectedProfile();
-            if (selected != null && Directory.Exists(selected.ProfilePath))
+            if (selected != null && selected.HasRegistryEntries)
             {
-                Process.Start("explorer.exe", selected.ProfilePath);
+                ProfileService.OpenRegistryForProfile(selected);
             }
         }
 
@@ -738,7 +799,7 @@ namespace TempProfileFixer
         public const string ProfileListRegistryPath = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList";
         public const string ProfileListRegPath = @"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList";
 
-        private static readonly Regex OldProfileRegex = new Regex(@"\.old(\.\d{8}-\d{6}(\.\d+)?)?$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex OldProfileRegex = new Regex(@"\.old(\.?\d{8}-\d{6}(\.\d+)?)?$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         public static List<ProfileRecord> GetProfiles(string usersRoot)
         {
@@ -792,6 +853,36 @@ namespace TempProfileFixer
             };
         }
 
+        public static RegistryRemovalPlan CreateRegistryRemovalPlan(ProfileRecord profile)
+        {
+            if (profile == null)
+            {
+                throw new ArgumentNullException("profile");
+            }
+
+            List<string> keys = new List<string>();
+            keys.AddRange(profile.NormalKeyNames ?? new List<string>());
+            keys.AddRange(profile.BakKeyNames ?? new List<string>());
+            keys = keys.Where(k => !String.IsNullOrWhiteSpace(k)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+            List<string> blockReasons = new List<string>(profile.BlockReasons ?? new List<string>());
+            if (keys.Count == 0)
+            {
+                blockReasons.Add("No matching ProfileList registry key");
+            }
+
+            return new RegistryRemovalPlan
+            {
+                FolderName = profile.FolderName,
+                ProfilePath = profile.ProfilePath,
+                BaseSid = profile.BaseSid,
+                RegistryKeyNames = keys,
+                IsBlocked = blockReasons.Count > 0,
+                BlockReasons = blockReasons,
+                Warnings = new List<string>(profile.Warnings ?? new List<string>())
+            };
+        }
+
         public static RebuildResult RebuildProfile(string profilePath, string usersRoot)
         {
             ProfileRecord profile = FindProfileByPath(profilePath, usersRoot);
@@ -837,6 +928,53 @@ namespace TempProfileFixer
                 {
                     ProfilePath = plan.ProfilePath,
                     RenamedTo = plan.RenameTo,
+                    RemovedKeys = new List<string>(plan.RegistryKeyNames),
+                    BackupDirectory = backupDirectory,
+                    LogPath = logPath,
+                    Success = true
+                };
+            }
+            catch (Exception ex)
+            {
+                WriteLog(logPath, "FAILED: " + ex.Message);
+                throw;
+            }
+        }
+
+        public static RegistryRemovalResult RemoveRegistryEntries(string profilePath, string usersRoot)
+        {
+            ProfileRecord profile = FindProfileByPath(profilePath, usersRoot);
+            RegistryRemovalPlan plan = CreateRegistryRemovalPlan(profile);
+            if (plan.IsBlocked)
+            {
+                throw new InvalidOperationException("Registry removal is blocked: " + String.Join("; ", plan.BlockReasons.ToArray()));
+            }
+
+            string runId = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            string safeName = SafeFileName(profile.FolderName);
+            string backupDirectory = Path.Combine(GetAppDirectory(), "backups", runId + "-" + safeName + "-registry");
+            string logDirectory = Path.Combine(GetAppDirectory(), "logs");
+            string logPath = Path.Combine(logDirectory, runId + "-" + safeName + "-registry.log");
+            Directory.CreateDirectory(backupDirectory);
+            Directory.CreateDirectory(logDirectory);
+
+            WriteLog(logPath, "Starting registry entry removal for " + profile.ProfilePath);
+            try
+            {
+                foreach (string keyName in plan.RegistryKeyNames)
+                {
+                    string destination = Path.Combine(backupDirectory, keyName + ".reg");
+                    WriteLog(logPath, "Exporting ProfileList key " + keyName + " to " + destination);
+                    ExportRegistryKey(keyName, destination);
+                    WriteLog(logPath, "Removing ProfileList key " + keyName);
+                    RemoveRegistryKey(keyName);
+                }
+
+                WriteLog(logPath, "Registry entry removal completed successfully.");
+
+                return new RegistryRemovalResult
+                {
+                    ProfilePath = profile.ProfilePath,
                     RemovedKeys = new List<string>(plan.RegistryKeyNames),
                     BackupDirectory = backupDirectory,
                     LogPath = logPath,
@@ -904,6 +1042,48 @@ namespace TempProfileFixer
             startInfo.UseShellExecute = false;
             startInfo.CreateNoWindow = true;
             Process.Start(startInfo);
+        }
+
+        public static Icon LoadApplicationIcon()
+        {
+            try
+            {
+                string executable = Application.ExecutablePath;
+                if (!String.IsNullOrWhiteSpace(executable) && File.Exists(executable))
+                {
+                    return Icon.ExtractAssociatedIcon(executable);
+                }
+            }
+            catch
+            {
+            }
+
+            return (Icon)SystemIcons.Application.Clone();
+        }
+
+        public static void OpenRegistryForProfile(ProfileRecord profile)
+        {
+            if (profile == null || !profile.HasRegistryEntries)
+            {
+                throw new InvalidOperationException("The selected profile has no matching ProfileList registry entry.");
+            }
+
+            string keyName = (profile.NormalKeyNames ?? new List<string>()).FirstOrDefault();
+            if (String.IsNullOrWhiteSpace(keyName))
+            {
+                keyName = (profile.BakKeyNames ?? new List<string>()).FirstOrDefault();
+            }
+
+            string lastKey = @"Computer\HKEY_LOCAL_MACHINE\" + ProfileListRegistryPath + "\\" + keyName;
+            using (RegistryKey regedit = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Applets\Regedit"))
+            {
+                if (regedit != null)
+                {
+                    regedit.SetValue("LastKey", lastKey, RegistryValueKind.String);
+                }
+            }
+
+            Process.Start("regedit.exe");
         }
 
         public static bool IsAdministrator()
@@ -1190,14 +1370,8 @@ namespace TempProfileFixer
 
         private static string GetUniqueOldPath(string profilePath, DateTime now)
         {
-            string baseOldPath = profilePath + ".old";
-            if (!Directory.Exists(baseOldPath) && !File.Exists(baseOldPath))
-            {
-                return baseOldPath;
-            }
-
             string timestamp = now.ToString("yyyyMMdd-HHmmss");
-            string timestamped = profilePath + ".old." + timestamp;
+            string timestamped = profilePath + ".old" + timestamp;
             if (!Directory.Exists(timestamped) && !File.Exists(timestamped))
             {
                 return timestamped;
@@ -1329,6 +1503,57 @@ namespace TempProfileFixer
         public List<string> BlockReasons { get; set; }
         public List<string> Warnings { get; set; }
         public string Status { get; set; }
+        public bool HasRegistryEntries
+        {
+            get
+            {
+                return (NormalKeyNames != null && NormalKeyNames.Count > 0) ||
+                    (BakKeyNames != null && BakKeyNames.Count > 0);
+            }
+        }
+    }
+
+    internal sealed class RegistryRemovalPlan
+    {
+        public string FolderName { get; set; }
+        public string ProfilePath { get; set; }
+        public string BaseSid { get; set; }
+        public List<string> RegistryKeyNames { get; set; }
+        public bool IsBlocked { get; set; }
+        public List<string> BlockReasons { get; set; }
+        public List<string> Warnings { get; set; }
+
+        public string ToDisplayText()
+        {
+            StringBuilder builder = new StringBuilder();
+            builder.AppendLine("Folder: " + FolderName);
+            builder.AppendLine("Profile path: " + ProfilePath);
+            builder.AppendLine("Base SID: " + BaseSid);
+            builder.AppendLine("Blocked: " + IsBlocked);
+            if (BlockReasons != null && BlockReasons.Count > 0)
+            {
+                builder.AppendLine("Block reasons: " + String.Join("; ", BlockReasons.ToArray()));
+            }
+            if (Warnings != null && Warnings.Count > 0)
+            {
+                builder.AppendLine("Warnings: " + String.Join("; ", Warnings.ToArray()));
+            }
+            builder.AppendLine("Registry keys to export and delete:");
+            foreach (string keyName in RegistryKeyNames ?? new List<string>())
+            {
+                builder.AppendLine("  " + ProfileService.ProfileListRegPath + "\\" + keyName);
+            }
+            builder.AppendLine();
+            if (IsBlocked)
+            {
+                builder.AppendLine("Blocked: " + String.Join("; ", (BlockReasons ?? new List<string>()).ToArray()));
+            }
+            else
+            {
+                builder.AppendLine("This will remove the matching ProfileList registry key(s) without renaming the profile folder.");
+            }
+            return builder.ToString();
+        }
     }
 
     internal sealed class RebuildPlan
@@ -1370,8 +1595,33 @@ namespace TempProfileFixer
             }
             else
             {
-                builder.AppendLine("This will rename the profile folder to .old and remove the matching ProfileList key(s).");
+                builder.AppendLine("This will rename the profile folder to .old<date> and remove the matching ProfileList key(s).");
             }
+            return builder.ToString();
+        }
+    }
+
+    internal sealed class RegistryRemovalResult
+    {
+        public string ProfilePath { get; set; }
+        public List<string> RemovedKeys { get; set; }
+        public string BackupDirectory { get; set; }
+        public string LogPath { get; set; }
+        public bool Success { get; set; }
+
+        public string ToDisplayText()
+        {
+            StringBuilder builder = new StringBuilder();
+            builder.AppendLine("Registry removal completed.");
+            builder.AppendLine();
+            builder.AppendLine("Profile path: " + ProfilePath);
+            builder.AppendLine("Removed keys:");
+            foreach (string keyName in RemovedKeys ?? new List<string>())
+            {
+                builder.AppendLine("  " + ProfileService.ProfileListRegPath + "\\" + keyName);
+            }
+            builder.AppendLine("Backup folder: " + BackupDirectory);
+            builder.AppendLine("Log: " + LogPath);
             return builder.ToString();
         }
     }

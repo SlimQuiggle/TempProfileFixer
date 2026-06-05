@@ -61,5 +61,8 @@ if ($LASTEXITCODE -ne 0) {
 if (($dryRunOutput -join "`n") -notmatch 'Blocked') {
     throw 'dry-run for the current profile should be blocked.'
 }
+if (($dryRunOutput -join "`n") -notmatch '\.old\d{8}-\d{6}') {
+    throw 'dry-run did not show the expected .old<date> rename target.'
+}
 
 Write-Host 'Smoke tests passed.'

@@ -12,7 +12,7 @@ HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList
 ```
 
 For a selected profile, it exports the matching registry keys, renames the
-profile folder to `.old`, then removes the matching normal SID key and any
+profile folder to `.old<date>`, then removes the matching normal SID key and any
 matching `.bak` key. After the rebuild it asks whether to reboot. The target user
 should sign in after the next reboot so Windows creates a fresh profile.
 
@@ -44,12 +44,12 @@ Open the GUI:
 
 Right-click a profile row for actions:
 
-- dry run / show plan
 - rebuild profile
-- remove `.bak` key(s)
+- remove registry entry
 - copy profile path
-- copy base SID
-- open profile folder
+- copy SID
+- open to registry
+- refresh
 
 ## Command line
 
@@ -83,6 +83,13 @@ Remove only the matching `.bak` key(s):
 .\dist\TempProfileFixer.exe remove-bak --path C:\Users\SomeUser
 ```
 
+Remove all matching ProfileList registry entries for a profile without renaming
+the profile folder:
+
+```powershell
+.\dist\TempProfileFixer.exe remove-registry --path C:\Users\SomeUser
+```
+
 ## Safety behavior
 
 The app blocks rebuilds for profiles that are:
@@ -113,8 +120,8 @@ Each rebuild writes a log to:
 logs\<timestamp>-<profile-folder>.log
 ```
 
-The old profile folder is preserved as `C:\Users\<name>.old`. If that path
-already exists, a timestamped `.old.<yyyyMMdd-HHmmss>` suffix is used instead.
+The old profile folder is preserved as `C:\Users\<name>.old<yyyyMMdd-HHmmss>`.
+If that path already exists, a numeric suffix is added.
 
 ## Validation
 

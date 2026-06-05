@@ -26,6 +26,11 @@ New-Item -Path $dist -ItemType Directory -Force | Out-Null
 $outFile = Join-Path $dist 'TempProfileFixer.exe'
 $source = Join-Path $repoRoot 'src\TempProfileFixer.App.cs'
 $manifest = Join-Path $repoRoot 'TempProfileFixer.exe.manifest'
+$icon = Join-Path $repoRoot 'assets\TempProfileFixer.ico'
+
+if (-not (Test-Path -LiteralPath $icon)) {
+    & (Join-Path $repoRoot 'tools\Generate-Icon.ps1')
+}
 
 $args = @(
     '/nologo',
@@ -34,6 +39,7 @@ $args = @(
     '/optimize+',
     "/out:$outFile",
     "/win32manifest:$manifest",
+    "/win32icon:$icon",
     '/reference:System.dll',
     '/reference:System.Core.dll',
     '/reference:System.Drawing.dll',
