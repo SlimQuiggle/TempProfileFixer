@@ -462,6 +462,13 @@ namespace TempProfileFixer
             trayMenu.Items.Add("Exit", null, delegate { Close(); });
             trayIcon.ContextMenuStrip = trayMenu;
 
+            MenuStrip menuStrip = new MenuStrip();
+            menuStrip.Dock = DockStyle.Top;
+            ToolStripMenuItem helpMenu = new ToolStripMenuItem("Help");
+            helpMenu.DropDownItems.Add("Help / FAQ", null, delegate { ShowHelpDialog(); });
+            menuStrip.Items.Add(helpMenu);
+            MainMenuStrip = menuStrip;
+
             Panel topPanel = new Panel();
             topPanel.Dock = DockStyle.Top;
             topPanel.Height = 122;
@@ -579,6 +586,7 @@ namespace TempProfileFixer
             Controls.Add(grid);
             Controls.Add(topPanel);
             Controls.Add(statusPanel);
+            Controls.Add(menuStrip);
             Shown += delegate { RefreshProfiles(); };
             FormClosed += delegate
             {
@@ -593,6 +601,96 @@ namespace TempProfileFixer
                     headerImage.Dispose();
                 }
             };
+        }
+
+        private void ShowHelpDialog()
+        {
+            ShowTextDialog("Temp Profile Fixer Help / FAQ", BuildHelpText());
+        }
+
+        private static string BuildHelpText()
+        {
+            StringBuilder help = new StringBuilder();
+            help.AppendLine("Temp Profile Fixer Help / FAQ");
+            help.AppendLine("=============================");
+            help.AppendLine();
+            help.AppendLine("Overview");
+            help.AppendLine("  This admin tool lists local profile folders from C:\\Users, matches each");
+            help.AppendLine("  folder to its base SID under HKLM\\...\\ProfileList, and shows whether");
+            help.AppendLine("  the matching normal and .bak registry keys exist.");
+            help.AppendLine();
+            help.AppendLine("Top buttons");
+            help.AppendLine("  Rebuild Profile");
+            help.AppendLine("    Exports the matching ProfileList registry keys, renames the selected");
+            help.AppendLine("    C:\\Users profile folder to .old<date>, deletes matching normal and");
+            help.AppendLine("    .bak registry keys, then starts the reboot flow after the rebuild");
+            help.AppendLine("    succeeds. Use this for the standard .old profile rebuild workflow.");
+            help.AppendLine();
+            help.AppendLine("  Delete Profile");
+            help.AppendLine("    Exports the matching ProfileList registry keys, permanently deletes");
+            help.AppendLine("    the selected C:\\Users profile folder, then deletes matching normal and");
+            help.AppendLine("    .bak registry keys. This does not create a .old folder copy.");
+            help.AppendLine();
+            help.AppendLine("  Refresh");
+            help.AppendLine("    Reloads the C:\\Users folder list, registry matches, loaded state, and");
+            help.AppendLine("    blocked status shown in the grid.");
+            help.AppendLine();
+            help.AppendLine("Right-click actions");
+            help.AppendLine("  Rebuild Profile");
+            help.AppendLine("    Same as the top Rebuild Profile button.");
+            help.AppendLine();
+            help.AppendLine("  Remove Registry Entry");
+            help.AppendLine("    Exports and deletes the selected profile's matching ProfileList keys");
+            help.AppendLine("    only. It does not rename or delete the profile folder.");
+            help.AppendLine();
+            help.AppendLine("  Copy Profile Path / Copy SID");
+            help.AppendLine("    Copies the selected row's profile folder path or base SID.");
+            help.AppendLine();
+            help.AppendLine("  Open to Registry");
+            help.AppendLine("    Opens Registry Editor at the selected profile's normal ProfileList key");
+            help.AppendLine("    when one is available.");
+            help.AppendLine();
+            help.AppendLine("  refresh");
+            help.AppendLine("    Same as the top Refresh button.");
+            help.AppendLine();
+            help.AppendLine("FAQ");
+            help.AppendLine("  Why are Rebuild Profile and Delete Profile greyed out?");
+            help.AppendLine("    The selected profile is blocked. Common reasons are that it is the");
+            help.AppendLine("    current admin profile, loaded/locked, special/system, missing a matching");
+            help.AppendLine("    SID, matched to multiple SIDs or normal keys, or Windows profile state");
+            help.AppendLine("    could not be verified.");
+            help.AppendLine();
+            help.AppendLine("  Does Rebuild Profile delete user files?");
+            help.AppendLine("    No. Rebuild Profile renames the profile folder to a timestamped .old");
+            help.AppendLine("    folder so it remains on disk as a rollback copy.");
+            help.AppendLine();
+            help.AppendLine("  Does Delete Profile keep the old folder?");
+            help.AppendLine("    No. Delete Profile permanently removes the selected profile folder after");
+            help.AppendLine("    confirmation. Registry backups and logs are still written.");
+            help.AppendLine();
+            help.AppendLine("  What happens to .bak registry keys?");
+            help.AppendLine("    Rebuild Profile, Delete Profile, and Remove Registry Entry include the");
+            help.AppendLine("    matching .bak key when one exists for the selected base SID.");
+            help.AppendLine();
+            help.AppendLine("  Why reboot after a rebuild?");
+            help.AppendLine("    The target user's next real sign-in after restart lets Windows create");
+            help.AppendLine("    and load a clean profile instead of reusing the old ProfileList state.");
+            help.AppendLine();
+            help.AppendLine("  Do I need the target user's password?");
+            help.AppendLine("    No. The tool does not attempt a fake login and does not collect target");
+            help.AppendLine("    user passwords.");
+            help.AppendLine();
+            help.AppendLine("  Where are backups and logs?");
+            help.AppendLine("    They are written next to the EXE under backups\\ and logs\\.");
+            help.AppendLine();
+            help.AppendLine("  Can I preview actions?");
+            help.AppendLine("    Double-click a row to show the rebuild plan without changing anything,");
+            help.AppendLine("    or run TempProfileFixer.exe dry-run --path C:\\Users\\SomeUser.");
+            help.AppendLine();
+            help.AppendLine("  Can I use the command line?");
+            help.AppendLine("    Yes. Supported commands include list, dry-run, rebuild, delete-profile,");
+            help.AppendLine("    remove-registry, and remove-bak.");
+            return help.ToString();
         }
 
         private void AddColumn(string name, string header, int width)

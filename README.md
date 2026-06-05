@@ -42,6 +42,10 @@ Open the GUI:
 .\dist\TempProfileFixer.exe
 ```
 
+Use `Help` > `Help / FAQ` in the menu bar for an in-app overview of each
+button, the right-click actions, blocked-profile reasons, reboot behavior, and
+backup/log locations.
+
 Right-click a profile row for actions:
 
 - rebuild profile
