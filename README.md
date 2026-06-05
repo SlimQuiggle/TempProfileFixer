@@ -51,9 +51,9 @@ Right-click a profile row for actions:
 - open to registry
 - refresh
 
-The top `Rebuild Profile` button runs the full rebuild for the highlighted
-profile: rename the folder to `.old<date>`, export/delete matching ProfileList
-registry entries, then start the reboot after the rebuild succeeds.
+The large top-left `Rebuild Profile` button runs the full rebuild for the
+highlighted profile: rename the folder to `.old<date>`, export/delete matching
+ProfileList registry entries, then start the reboot after the rebuild succeeds.
 
 ## Command line
 

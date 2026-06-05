@@ -435,7 +435,7 @@ namespace TempProfileFixer
 
             Panel topPanel = new Panel();
             topPanel.Dock = DockStyle.Top;
-            topPanel.Height = 80;
+            topPanel.Height = 122;
             topPanel.Padding = new Padding(12, 10, 12, 8);
 
             PictureBox headerIcon = new PictureBox();
@@ -459,24 +459,27 @@ namespace TempProfileFixer
             refreshButton.Text = "Refresh";
             refreshButton.Width = 96;
             refreshButton.Height = 30;
-            refreshButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            refreshButton.Location = new Point(796, 20);
+            refreshButton.Location = new Point(416, 78);
             refreshButton.Click += delegate { RefreshProfiles(); };
 
             dryRunButton = new Button();
             dryRunButton.Text = "Dry Run";
             dryRunButton.Width = 96;
             dryRunButton.Height = 30;
-            dryRunButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            dryRunButton.Location = new Point(900, 20);
+            dryRunButton.Location = new Point(304, 78);
             dryRunButton.Click += delegate { ShowSelectedPlan(); };
 
             rebuildButton = new Button();
             rebuildButton.Text = "Rebuild Profile";
-            rebuildButton.Width = 140;
-            rebuildButton.Height = 30;
-            rebuildButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            rebuildButton.Location = new Point(1004, 20);
+            rebuildButton.Width = 204;
+            rebuildButton.Height = 38;
+            rebuildButton.Location = new Point(84, 74);
+            rebuildButton.Font = new Font("Segoe UI", 10, FontStyle.Bold);
+            rebuildButton.BackColor = Color.FromArgb(36, 115, 216);
+            rebuildButton.ForeColor = Color.White;
+            rebuildButton.FlatStyle = FlatStyle.Flat;
+            rebuildButton.FlatAppearance.BorderSize = 0;
+            rebuildButton.UseVisualStyleBackColor = false;
             rebuildButton.Click += delegate { RebuildSelectedProfileAndReboot(); };
 
             topPanel.Controls.Add(headerIcon);
