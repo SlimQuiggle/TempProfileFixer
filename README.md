@@ -57,6 +57,10 @@ ProfileList registry entries, then start the reboot after the rebuild succeeds.
 It greys out when the highlighted profile is locked, loaded, current, or
 otherwise blocked.
 
+The red top `Delete Profile` button permanently deletes the highlighted profile
+folder and removes its matching ProfileList registry entries. It uses the same
+blocked-profile safety checks as rebuild and greys out for locked profiles.
+
 ## Command line
 
 List detected local profile folders and matched SIDs:
@@ -82,6 +86,12 @@ Skip the typed confirmation when automating:
 
 ```powershell
 .\dist\TempProfileFixer.exe rebuild --path C:\Users\SomeUser --yes
+```
+
+Permanently delete a profile folder and matching ProfileList registry entries:
+
+```powershell
+.\dist\TempProfileFixer.exe delete-profile --path C:\Users\SomeUser
 ```
 
 Remove only the matching `.bak` key(s):
@@ -126,6 +136,9 @@ Each rebuild writes a log to:
 ```text
 logs\<timestamp>-<profile-folder>.log
 ```
+
+Delete-profile runs write registry backups under `backups\<timestamp>-<profile-folder>-delete\`
+and logs under `logs\<timestamp>-<profile-folder>-delete.log`.
 
 The old profile folder is preserved as `C:\Users\<name>.old<yyyyMMdd-HHmmss>`.
 If that path already exists, a numeric suffix is added.

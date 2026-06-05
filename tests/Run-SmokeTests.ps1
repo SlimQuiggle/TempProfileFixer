@@ -56,6 +56,14 @@ if (($listOutput -join "`n") -notmatch 'ProfilePath') {
     throw 'list command did not print the expected header.'
 }
 
+$helpOutput = & $exe help 2>&1
+if ($LASTEXITCODE -ne 0) {
+    throw "help command failed: $helpOutput"
+}
+if (($helpOutput -join "`n") -notmatch 'delete-profile') {
+    throw 'help command did not advertise delete-profile.'
+}
+
 $dryRunOutput = & $exe dry-run --path $env:USERPROFILE 2>&1
 if ($LASTEXITCODE -ne 0) {
     throw "dry-run command failed: $dryRunOutput"

@@ -146,6 +146,34 @@ namespace TempProfileFixer
                 return 0;
             }
 
+            if (command == "delete-profile" || command == "delete")
+            {
+                string path = parsed.GetPath();
+                if (String.IsNullOrWhiteSpace(path))
+                {
+                    throw new InvalidOperationException("delete-profile requires --path C:\\Users\\<name>.");
+                }
+
+                ProfileRecord profile = ProfileService.FindProfileByPath(path, usersRoot);
+                DeleteProfilePlan plan = ProfileService.CreateDeleteProfilePlan(profile);
+                Console.WriteLine(plan.ToDisplayText());
+
+                if (plan.IsBlocked)
+                {
+                    throw new InvalidOperationException("Profile deletion is blocked: " + String.Join("; ", plan.BlockReasons.ToArray()));
+                }
+
+                if (!parsed.HasFlag("yes") && !ConfirmTyped("Type DELETEPROFILE to permanently delete the profile folder and listed ProfileList key(s): ", "DELETEPROFILE"))
+                {
+                    Console.WriteLine("Cancelled.");
+                    return 2;
+                }
+
+                DeleteProfileResult result = ProfileService.DeleteProfile(path, usersRoot);
+                Console.WriteLine(result.ToDisplayText());
+                return 0;
+            }
+
             if (command == "remove-bak" || command == "fix-bak")
             {
                 string path = parsed.GetPath();
@@ -250,6 +278,7 @@ namespace TempProfileFixer
             Console.WriteLine("  TempProfileFixer.exe list [--users-root C:\\Users]");
             Console.WriteLine("  TempProfileFixer.exe dry-run --path C:\\Users\\SomeUser");
             Console.WriteLine("  TempProfileFixer.exe rebuild --path C:\\Users\\SomeUser [--yes] [--reboot] [--no-reboot-prompt]");
+            Console.WriteLine("  TempProfileFixer.exe delete-profile --path C:\\Users\\SomeUser [--yes]");
             Console.WriteLine("  TempProfileFixer.exe remove-registry --path C:\\Users\\SomeUser [--yes]");
             Console.WriteLine("  TempProfileFixer.exe remove-bak --path C:\\Users\\SomeUser [--yes]");
             Console.WriteLine();
@@ -386,6 +415,7 @@ namespace TempProfileFixer
         private readonly DataGridView grid;
         private readonly Label statusLabel;
         private readonly Button rebuildButton;
+        private readonly Button deleteProfileButton;
         private readonly ToolStripMenuItem rebuildMenuItem;
         private readonly ToolStripMenuItem removeRegistryMenuItem;
         private readonly ToolStripMenuItem copySidMenuItem;
@@ -458,7 +488,7 @@ namespace TempProfileFixer
             refreshButton.Text = "Refresh";
             refreshButton.Width = 96;
             refreshButton.Height = 30;
-            refreshButton.Location = new Point(416, 78);
+            refreshButton.Location = new Point(542, 78);
             refreshButton.Click += delegate { RefreshProfiles(); };
 
             rebuildButton = new Button();
@@ -474,11 +504,25 @@ namespace TempProfileFixer
             rebuildButton.UseVisualStyleBackColor = false;
             rebuildButton.Click += delegate { RebuildSelectedProfileAndReboot(); };
 
+            deleteProfileButton = new Button();
+            deleteProfileButton.Text = "Delete Profile";
+            deleteProfileButton.Width = 204;
+            deleteProfileButton.Height = 38;
+            deleteProfileButton.Location = new Point(304, 74);
+            deleteProfileButton.Font = new Font("Segoe UI", 10, FontStyle.Bold);
+            deleteProfileButton.BackColor = Color.FromArgb(196, 48, 43);
+            deleteProfileButton.ForeColor = Color.White;
+            deleteProfileButton.FlatStyle = FlatStyle.Flat;
+            deleteProfileButton.FlatAppearance.BorderSize = 0;
+            deleteProfileButton.UseVisualStyleBackColor = false;
+            deleteProfileButton.Click += delegate { DeleteSelectedProfile(); };
+
             topPanel.Controls.Add(headerIcon);
             topPanel.Controls.Add(titleLabel);
             topPanel.Controls.Add(subtitleLabel);
             topPanel.Controls.Add(refreshButton);
             topPanel.Controls.Add(rebuildButton);
+            topPanel.Controls.Add(deleteProfileButton);
 
             grid = new DataGridView();
             grid.Dock = DockStyle.Fill;
@@ -631,6 +675,8 @@ namespace TempProfileFixer
             bool canRebuild = hasSelection && !selected.IsBlocked;
             rebuildButton.Enabled = canRebuild;
             ApplyRebuildButtonStyle(canRebuild);
+            deleteProfileButton.Enabled = canRebuild;
+            ApplyDeleteProfileButtonStyle(canRebuild);
             rebuildMenuItem.Enabled = canRebuild;
             removeRegistryMenuItem.Enabled = hasSelection && selected.HasRegistryEntries && !selected.IsBlocked;
             copySidMenuItem.Enabled = hasSelection && !String.IsNullOrWhiteSpace(selected.BaseSid);
@@ -643,6 +689,13 @@ namespace TempProfileFixer
             rebuildButton.BackColor = canRebuild ? Color.FromArgb(36, 115, 216) : Color.FromArgb(176, 180, 186);
             rebuildButton.ForeColor = canRebuild ? Color.White : Color.FromArgb(82, 88, 96);
             rebuildButton.Cursor = canRebuild ? Cursors.Hand : Cursors.Default;
+        }
+
+        private void ApplyDeleteProfileButtonStyle(bool canDelete)
+        {
+            deleteProfileButton.BackColor = canDelete ? Color.FromArgb(196, 48, 43) : Color.FromArgb(176, 180, 186);
+            deleteProfileButton.ForeColor = canDelete ? Color.White : Color.FromArgb(82, 88, 96);
+            deleteProfileButton.Cursor = canDelete ? Cursors.Hand : Cursors.Default;
         }
 
         private void ShowSelectedPlan()
@@ -708,6 +761,53 @@ namespace TempProfileFixer
             {
                 statusLabel.Text = "Rebuild failed.";
                 MessageBox.Show(ex.Message, "Rebuild failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void DeleteSelectedProfile()
+        {
+            ProfileRecord selected = GetSelectedProfile();
+            if (selected == null)
+            {
+                MessageBox.Show("Select a profile first.", "Delete Profile", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            DeleteProfilePlan plan = ProfileService.CreateDeleteProfilePlan(selected);
+            if (plan.IsBlocked)
+            {
+                MessageBox.Show(String.Join(Environment.NewLine, plan.BlockReasons.ToArray()), "Profile deletion is blocked", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            DialogResult confirm = MessageBox.Show(
+                plan.ToDisplayText() +
+                Environment.NewLine +
+                "This permanently deletes the selected profile folder. It does not rename it to .old." +
+                Environment.NewLine +
+                Environment.NewLine +
+                "Continue?",
+                "Confirm profile deletion",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+            if (confirm != DialogResult.Yes)
+            {
+                return;
+            }
+
+            try
+            {
+                statusLabel.Text = "Deleting " + selected.FolderName + "...";
+                Refresh();
+                DeleteProfileResult result = ProfileService.DeleteProfile(selected.ProfilePath, usersRoot);
+                MessageBox.Show(result.ToDisplayText(), "Profile deleted", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                RefreshProfiles();
+            }
+            catch (Exception ex)
+            {
+                statusLabel.Text = "Delete failed.";
+                MessageBox.Show(ex.Message, "Delete failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -898,6 +998,36 @@ namespace TempProfileFixer
             };
         }
 
+        public static DeleteProfilePlan CreateDeleteProfilePlan(ProfileRecord profile)
+        {
+            if (profile == null)
+            {
+                throw new ArgumentNullException("profile");
+            }
+
+            List<string> keys = new List<string>();
+            keys.AddRange(profile.NormalKeyNames ?? new List<string>());
+            keys.AddRange(profile.BakKeyNames ?? new List<string>());
+            keys = keys.Where(k => !String.IsNullOrWhiteSpace(k)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+            List<string> blockReasons = new List<string>(profile.BlockReasons ?? new List<string>());
+            if (keys.Count == 0)
+            {
+                blockReasons.Add("No matching ProfileList registry key");
+            }
+
+            return new DeleteProfilePlan
+            {
+                FolderName = profile.FolderName,
+                ProfilePath = profile.ProfilePath,
+                BaseSid = profile.BaseSid,
+                RegistryKeyNames = keys,
+                IsBlocked = blockReasons.Count > 0,
+                BlockReasons = blockReasons,
+                Warnings = new List<string>(profile.Warnings ?? new List<string>())
+            };
+        }
+
         public static RebuildResult RebuildProfile(string profilePath, string usersRoot)
         {
             ProfileRecord profile = FindProfileByPath(profilePath, usersRoot);
@@ -990,6 +1120,62 @@ namespace TempProfileFixer
                 return new RegistryRemovalResult
                 {
                     ProfilePath = profile.ProfilePath,
+                    RemovedKeys = new List<string>(plan.RegistryKeyNames),
+                    BackupDirectory = backupDirectory,
+                    LogPath = logPath,
+                    Success = true
+                };
+            }
+            catch (Exception ex)
+            {
+                WriteLog(logPath, "FAILED: " + ex.Message);
+                throw;
+            }
+        }
+
+        public static DeleteProfileResult DeleteProfile(string profilePath, string usersRoot)
+        {
+            ProfileRecord profile = FindProfileByPath(profilePath, usersRoot);
+            DeleteProfilePlan plan = CreateDeleteProfilePlan(profile);
+            if (plan.IsBlocked)
+            {
+                throw new InvalidOperationException("Profile deletion is blocked: " + String.Join("; ", plan.BlockReasons.ToArray()));
+            }
+
+            string runId = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            string safeName = SafeFileName(profile.FolderName);
+            string backupDirectory = Path.Combine(GetAppDirectory(), "backups", runId + "-" + safeName + "-delete");
+            string logDirectory = Path.Combine(GetAppDirectory(), "logs");
+            string logPath = Path.Combine(logDirectory, runId + "-" + safeName + "-delete.log");
+            Directory.CreateDirectory(backupDirectory);
+            Directory.CreateDirectory(logDirectory);
+
+            WriteLog(logPath, "Starting profile deletion for " + profile.ProfilePath);
+            WriteLog(logPath, "Base SID: " + profile.BaseSid);
+
+            try
+            {
+                foreach (string keyName in plan.RegistryKeyNames)
+                {
+                    string destination = Path.Combine(backupDirectory, keyName + ".reg");
+                    WriteLog(logPath, "Exporting ProfileList key " + keyName + " to " + destination);
+                    ExportRegistryKey(keyName, destination);
+                }
+
+                WriteLog(logPath, "Deleting profile folder " + plan.ProfilePath);
+                DeleteDirectoryTree(plan.ProfilePath);
+
+                foreach (string keyName in plan.RegistryKeyNames)
+                {
+                    WriteLog(logPath, "Removing ProfileList key " + keyName);
+                    RemoveRegistryKey(keyName);
+                }
+
+                WriteLog(logPath, "Profile deletion completed successfully.");
+
+                return new DeleteProfileResult
+                {
+                    ProfilePath = plan.ProfilePath,
                     RemovedKeys = new List<string>(plan.RegistryKeyNames),
                     BackupDirectory = backupDirectory,
                     LogPath = logPath,
@@ -1455,6 +1641,28 @@ namespace TempProfileFixer
             }
         }
 
+        private static void DeleteDirectoryTree(string directoryPath)
+        {
+            if (!Directory.Exists(directoryPath))
+            {
+                return;
+            }
+
+            DirectoryInfo root = new DirectoryInfo(directoryPath);
+            foreach (FileInfo file in root.GetFiles("*", SearchOption.AllDirectories))
+            {
+                file.Attributes = FileAttributes.Normal;
+            }
+
+            foreach (DirectoryInfo directory in root.GetDirectories("*", SearchOption.AllDirectories))
+            {
+                directory.Attributes = FileAttributes.Normal;
+            }
+
+            root.Attributes = FileAttributes.Normal;
+            root.Delete(true);
+        }
+
         private static string GetAppDirectory()
         {
             string baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
@@ -1588,6 +1796,49 @@ namespace TempProfileFixer
         }
     }
 
+    internal sealed class DeleteProfilePlan
+    {
+        public string FolderName { get; set; }
+        public string ProfilePath { get; set; }
+        public string BaseSid { get; set; }
+        public List<string> RegistryKeyNames { get; set; }
+        public bool IsBlocked { get; set; }
+        public List<string> BlockReasons { get; set; }
+        public List<string> Warnings { get; set; }
+
+        public string ToDisplayText()
+        {
+            StringBuilder builder = new StringBuilder();
+            builder.AppendLine("Folder: " + FolderName);
+            builder.AppendLine("Profile path to delete: " + ProfilePath);
+            builder.AppendLine("Base SID: " + BaseSid);
+            builder.AppendLine("Blocked: " + IsBlocked);
+            if (BlockReasons != null && BlockReasons.Count > 0)
+            {
+                builder.AppendLine("Block reasons: " + String.Join("; ", BlockReasons.ToArray()));
+            }
+            if (Warnings != null && Warnings.Count > 0)
+            {
+                builder.AppendLine("Warnings: " + String.Join("; ", Warnings.ToArray()));
+            }
+            builder.AppendLine("Registry keys to export and delete:");
+            foreach (string keyName in RegistryKeyNames ?? new List<string>())
+            {
+                builder.AppendLine("  " + ProfileService.ProfileListRegPath + "\\" + keyName);
+            }
+            builder.AppendLine();
+            if (IsBlocked)
+            {
+                builder.AppendLine("Blocked: " + String.Join("; ", (BlockReasons ?? new List<string>()).ToArray()));
+            }
+            else
+            {
+                builder.AppendLine("This will permanently delete the profile folder and remove the matching ProfileList key(s).");
+            }
+            return builder.ToString();
+        }
+    }
+
     internal sealed class RebuildPlan
     {
         public string FolderName { get; set; }
@@ -1653,6 +1904,31 @@ namespace TempProfileFixer
                 builder.AppendLine("  " + ProfileService.ProfileListRegPath + "\\" + keyName);
             }
             builder.AppendLine("Backup folder: " + BackupDirectory);
+            builder.AppendLine("Log: " + LogPath);
+            return builder.ToString();
+        }
+    }
+
+    internal sealed class DeleteProfileResult
+    {
+        public string ProfilePath { get; set; }
+        public List<string> RemovedKeys { get; set; }
+        public string BackupDirectory { get; set; }
+        public string LogPath { get; set; }
+        public bool Success { get; set; }
+
+        public string ToDisplayText()
+        {
+            StringBuilder builder = new StringBuilder();
+            builder.AppendLine("Profile deleted.");
+            builder.AppendLine();
+            builder.AppendLine("Deleted profile path: " + ProfilePath);
+            builder.AppendLine("Removed keys:");
+            foreach (string keyName in RemovedKeys ?? new List<string>())
+            {
+                builder.AppendLine("  " + ProfileService.ProfileListRegPath + "\\" + keyName);
+            }
+            builder.AppendLine("Registry backup folder: " + BackupDirectory);
             builder.AppendLine("Log: " + LogPath);
             return builder.ToString();
         }
