@@ -134,6 +134,9 @@ Run compatibility diagnostics without changing profiles or registry keys:
 .\dist\TempProfileFixer.exe doctor
 ```
 
+`doctor` exits nonzero for failures or warnings so remote tools can detect a
+machine that needs attention before a rebuild.
+
 Preview the exact rename and registry actions for a profile folder:
 
 ```powershell

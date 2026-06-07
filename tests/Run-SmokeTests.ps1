@@ -125,6 +125,20 @@ if (($profileDryRunOutput -join "`n") -notmatch 'Blocked') {
 }
 
 $assembly = [Reflection.Assembly]::LoadFrom($exe)
+$compatibilityReportType = $assembly.GetType('TempProfileFixer.CompatibilityReport', $true)
+$warningReport = [Activator]::CreateInstance($compatibilityReportType)
+$compatibilityReportType.GetMethod('AddWarning').Invoke($warningReport, @('ProfileList registry', 'Skipped unreadable ProfileList key(s): S-1-test'))
+$warningReportText = $compatibilityReportType.GetMethod('ToDisplayText').Invoke($warningReport, @())
+if ($compatibilityReportType.GetProperty('HasIssues').GetValue($warningReport, $null) -ne $true) {
+    throw 'CompatibilityReport warnings should make doctor return a nonzero issue state.'
+}
+if ($compatibilityReportType.GetProperty('HasFailures').GetValue($warningReport, $null) -ne $false) {
+    throw 'CompatibilityReport warnings should not be reported as failures.'
+}
+if ($warningReportText -notmatch 'completed with warnings') {
+    throw 'CompatibilityReport warning summary should not say all checks passed.'
+}
+
 $profileServiceType = $assembly.GetType('TempProfileFixer.ProfileService', $true)
 $normalizeRegistryMethod = $profileServiceType.GetMethod(
     'NormalizeRegistryProfilePath',

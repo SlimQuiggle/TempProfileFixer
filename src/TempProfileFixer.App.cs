@@ -246,7 +246,7 @@ namespace TempProfileFixer
             {
                 CompatibilityReport report = ProfileService.RunDiagnostics(target);
                 Console.WriteLine(report.ToDisplayText());
-                return report.HasFailures ? 1 : 0;
+                return report.HasIssues ? 1 : 0;
             }
 
             if (RequiresAdministrator(command) && !ProfileService.IsAdministrator())
@@ -2764,6 +2764,16 @@ namespace TempProfileFixer
             get { return Checks.Any(c => String.Equals(c.Status, "FAIL", StringComparison.OrdinalIgnoreCase)); }
         }
 
+        public bool HasWarnings
+        {
+            get { return Checks.Any(c => String.Equals(c.Status, "WARN", StringComparison.OrdinalIgnoreCase)); }
+        }
+
+        public bool HasIssues
+        {
+            get { return HasFailures || HasWarnings; }
+        }
+
         public void AddOk(string name, string detail)
         {
             Checks.Add(new DiagnosticCheck { Status = "OK", Name = name, Detail = detail });
@@ -2790,9 +2800,18 @@ namespace TempProfileFixer
                 builder.AppendLine("[" + check.Status + "] " + check.Name + " - " + check.Detail);
             }
             builder.AppendLine();
-            builder.AppendLine(HasFailures
-                ? "One or more checks failed. Fix those before rebuilding a profile on this computer."
-                : "All checks passed.");
+            if (HasFailures)
+            {
+                builder.AppendLine("One or more checks failed. Fix those before rebuilding a profile on this computer.");
+            }
+            else if (HasWarnings)
+            {
+                builder.AppendLine("One or more checks completed with warnings. Review those before rebuilding a profile on this computer.");
+            }
+            else
+            {
+                builder.AppendLine("All checks passed.");
+            }
             return builder.ToString();
         }
     }

@@ -52,6 +52,9 @@ Run compatibility diagnostics without changing profiles or registry keys:
 .\TempProfileFixer.exe doctor
 ```
 
+`doctor` exits nonzero for failures or warnings so remote tools can detect a
+machine that needs attention before a rebuild.
+
 Preview the rebuild plan without changing anything:
 
 ```powershell
