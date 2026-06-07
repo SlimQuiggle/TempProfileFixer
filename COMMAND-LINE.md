@@ -7,6 +7,10 @@ If the EXE will not launch on a workstation, run `TempProfileFixer.cmd` from the
 same folder. It checks for Microsoft .NET Framework 4.x Full and then starts the
 EXE with the same arguments.
 
+For the most reliable transfer to another computer, use
+`TempProfileFixer-portable.zip` from the `dist` folder. Extract the ZIP locally
+and run `TempProfileFixer.cmd doctor` before rebuilding a profile.
+
 ## Profile selection
 
 Use one of these selectors with commands that operate on a single profile:

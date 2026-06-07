@@ -75,10 +75,35 @@ if ($LASTEXITCODE -ne 0) {
 $readme = Join-Path $repoRoot 'README.md'
 $commandLineReadme = Join-Path $repoRoot 'COMMAND-LINE.md'
 if ((Split-Path -Parent $outFile) -eq $dist) {
+    Remove-Item -LiteralPath (Join-Path $dist 'SHA256SUMS.txt') -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $dist 'TempProfileFixer-portable.zip') -Force -ErrorAction SilentlyContinue
+
     Copy-Item -LiteralPath $readme -Destination (Join-Path $dist 'README.md') -Force
     Copy-Item -LiteralPath $commandLineReadme -Destination (Join-Path $dist 'COMMAND-LINE.md') -Force
     Copy-Item -LiteralPath $appConfig -Destination (Join-Path $dist 'TempProfileFixer.exe.config') -Force
     Copy-Item -LiteralPath $launcher -Destination (Join-Path $dist 'TempProfileFixer.cmd') -Force
+
+    $packageFiles = @(
+        'TempProfileFixer.exe',
+        'TempProfileFixer.exe.config',
+        'TempProfileFixer.cmd',
+        'README.md',
+        'COMMAND-LINE.md'
+    )
+    $checksumPath = Join-Path $dist 'SHA256SUMS.txt'
+    $checksums = foreach ($fileName in $packageFiles) {
+        $filePath = Join-Path $dist $fileName
+        $hash = Get-FileHash -LiteralPath $filePath -Algorithm SHA256
+        "{0}  {1}" -f $hash.Hash.ToLowerInvariant(), $fileName
+    }
+    Set-Content -LiteralPath $checksumPath -Value $checksums -Encoding ASCII
+
+    $zipPath = Join-Path $dist 'TempProfileFixer-portable.zip'
+    if (Test-Path -LiteralPath $zipPath) {
+        Remove-Item -LiteralPath $zipPath -Force
+    }
+    $archivePaths = ($packageFiles + @('SHA256SUMS.txt')) | ForEach-Object { Join-Path $dist $_ }
+    Compress-Archive -LiteralPath $archivePaths -DestinationPath $zipPath -Force
 }
 
 Write-Host "Built $outFile"

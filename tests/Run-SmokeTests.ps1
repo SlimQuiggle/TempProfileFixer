@@ -108,11 +108,33 @@ if (($profileDryRunOutput -join "`n") -notmatch 'Blocked') {
     throw 'dry-run by profile name for the current profile should be blocked.'
 }
 
-foreach ($packagedFile in @('README.md', 'COMMAND-LINE.md', 'TempProfileFixer.exe.config', 'TempProfileFixer.cmd')) {
+foreach ($packagedFile in @('README.md', 'COMMAND-LINE.md', 'TempProfileFixer.exe.config', 'TempProfileFixer.cmd', 'SHA256SUMS.txt', 'TempProfileFixer-portable.zip')) {
     $packagedPath = Join-Path $repoRoot (Join-Path 'dist' $packagedFile)
     if (-not (Test-Path -LiteralPath $packagedPath)) {
         throw "Expected packaged file is missing: $packagedPath"
     }
+}
+
+$checksumText = Get-Content -LiteralPath (Join-Path $repoRoot 'dist\SHA256SUMS.txt') -Raw
+foreach ($checksumFile in @('TempProfileFixer.exe', 'TempProfileFixer.exe.config', 'TempProfileFixer.cmd', 'README.md', 'COMMAND-LINE.md')) {
+    if ($checksumText -notmatch [regex]::Escape($checksumFile)) {
+        throw "Checksum file does not include $checksumFile."
+    }
+}
+
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$zipPath = Join-Path $repoRoot 'dist\TempProfileFixer-portable.zip'
+$zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+try {
+    $zipNames = @($zip.Entries | ForEach-Object { $_.FullName })
+    foreach ($zipFile in @('TempProfileFixer.exe', 'TempProfileFixer.exe.config', 'TempProfileFixer.cmd', 'README.md', 'COMMAND-LINE.md', 'SHA256SUMS.txt')) {
+        if ($zipNames -notcontains $zipFile) {
+            throw "Portable ZIP does not include $zipFile."
+        }
+    }
+}
+finally {
+    $zip.Dispose()
 }
 
 Write-Host 'Smoke tests passed.'

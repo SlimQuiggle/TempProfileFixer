@@ -43,7 +43,13 @@ dist\TempProfileFixer.cmd
 dist\TempProfileFixer.exe.config
 dist\README.md
 dist\COMMAND-LINE.md
+dist\SHA256SUMS.txt
+dist\TempProfileFixer-portable.zip
 ```
+
+For another computer, copy `dist\TempProfileFixer-portable.zip`, extract it
+locally, and run `TempProfileFixer.cmd doctor` first. The ZIP keeps the EXE,
+runtime config, launcher, docs, and checksums together.
 
 ## Run
 
