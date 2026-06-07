@@ -262,6 +262,7 @@ The diagnostic report checks:
 - configured users root and registry profile root
 - readable `C:\Users` or remote users root
 - readable `HKLM\...\ProfileList`
+- skipped or unreadable `ProfileList` subkeys
 - `Win32_UserProfile` WMI access
 - `reg.exe` and `shutdown.exe`
 - writable backup/log storage

@@ -205,9 +205,10 @@ For an interactive double-click check, run:
 ```
 
 The report checks elevation, configured users/profile roots, users-root access,
-ProfileList registry access, WMI profile state, `reg.exe`, `shutdown.exe`, and
-writable data storage. Backup, log, and diagnostic files are written under the
-first writable location the tool can use: the EXE folder,
+ProfileList registry access, skipped or unreadable ProfileList subkeys, WMI
+profile state, `reg.exe`, `shutdown.exe`, and writable data storage. Backup,
+log, and diagnostic files are written under the first writable location the tool
+can use: the EXE folder,
 `C:\ProgramData\TempProfileFixer`, or the current user's Temp folder.
 
 If Windows blocks a downloaded EXE, open the file properties and use `Unblock`,

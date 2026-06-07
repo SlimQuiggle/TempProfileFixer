@@ -1625,7 +1625,12 @@ namespace TempProfileFixer
             List<ProfileListEntry> entries;
             try
             {
-                entries = GetProfileListEntries(target);
+                string registryWarning;
+                entries = GetProfileListEntries(target, out registryWarning);
+                if (!String.IsNullOrWhiteSpace(registryWarning))
+                {
+                    registryError = registryWarning;
+                }
             }
             catch (Exception ex)
             {
@@ -1694,8 +1699,16 @@ namespace TempProfileFixer
 
             try
             {
-                List<ProfileListEntry> entries = GetProfileListEntries(target);
-                report.AddOk("ProfileList registry", target.RegistryPath + " readable; " + entries.Count + " key(s) found.");
+                string registryWarning;
+                List<ProfileListEntry> entries = GetProfileListEntries(target, out registryWarning);
+                if (String.IsNullOrWhiteSpace(registryWarning))
+                {
+                    report.AddOk("ProfileList registry", target.RegistryPath + " readable; " + entries.Count + " key(s) found.");
+                }
+                else
+                {
+                    report.AddWarning("ProfileList registry", target.RegistryPath + " readable with warning; " + entries.Count + " key(s) read. " + registryWarning);
+                }
             }
             catch (Exception ex)
             {
@@ -2294,17 +2307,25 @@ namespace TempProfileFixer
 
         private static List<ProfileListEntry> GetProfileListEntries(ProfileTarget target)
         {
+            string warning;
+            return GetProfileListEntries(target, out warning);
+        }
+
+        private static List<ProfileListEntry> GetProfileListEntries(ProfileTarget target, out string warning)
+        {
             if (target == null)
             {
                 throw new ArgumentNullException("target");
             }
 
-            return GetProfileListEntries(target.ComputerName, target.ProfileImageRoot);
+            return GetProfileListEntries(target.ComputerName, target.ProfileImageRoot, out warning);
         }
 
-        private static List<ProfileListEntry> GetProfileListEntries(string computerName, string profileImageRoot)
+        private static List<ProfileListEntry> GetProfileListEntries(string computerName, string profileImageRoot, out string warning)
         {
             List<ProfileListEntry> entries = new List<ProfileListEntry>();
+            List<string> skippedKeys = new List<string>();
+            warning = null;
             RegistryView view = Environment.Is64BitOperatingSystem ? RegistryView.Registry64 : RegistryView.Default;
             using (RegistryKey localMachine = OpenLocalMachine(computerName, view))
             using (RegistryKey profileList = localMachine.OpenSubKey(ProfileListRegistryPath, false))
@@ -2316,26 +2337,39 @@ namespace TempProfileFixer
 
                 foreach (string keyName in profileList.GetSubKeyNames().OrderBy(n => n))
                 {
-                    using (RegistryKey key = profileList.OpenSubKey(keyName, false))
+                    try
                     {
-                        if (key == null)
+                        using (RegistryKey key = profileList.OpenSubKey(keyName, false))
                         {
-                            continue;
-                        }
+                            if (key == null)
+                            {
+                                skippedKeys.Add(keyName + " (could not open)");
+                                continue;
+                            }
 
-                        string imagePath = Convert.ToString(key.GetValue("ProfileImagePath", String.Empty, RegistryValueOptions.DoNotExpandEnvironmentNames));
-                        entries.Add(new ProfileListEntry
-                        {
-                            KeyName = keyName,
-                            BaseSid = GetBaseSid(keyName),
-                            IsBak = keyName.EndsWith(".bak", StringComparison.OrdinalIgnoreCase),
-                            ProfileImagePath = imagePath,
-                            NormalizedProfilePath = NormalizeRegistryProfilePath(imagePath, profileImageRoot),
-                            State = key.GetValue("State"),
-                            RefCount = key.GetValue("RefCount")
-                        });
+                            string imagePath = Convert.ToString(key.GetValue("ProfileImagePath", String.Empty, RegistryValueOptions.DoNotExpandEnvironmentNames));
+                            entries.Add(new ProfileListEntry
+                            {
+                                KeyName = keyName,
+                                BaseSid = GetBaseSid(keyName),
+                                IsBak = keyName.EndsWith(".bak", StringComparison.OrdinalIgnoreCase),
+                                ProfileImagePath = imagePath,
+                                NormalizedProfilePath = NormalizeRegistryProfilePath(imagePath, profileImageRoot),
+                                State = key.GetValue("State"),
+                                RefCount = key.GetValue("RefCount")
+                            });
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        skippedKeys.Add(keyName + " (" + ex.Message + ")");
                     }
                 }
+            }
+
+            if (skippedKeys.Count > 0)
+            {
+                warning = "Skipped unreadable ProfileList key(s): " + String.Join("; ", skippedKeys.ToArray());
             }
 
             return entries;

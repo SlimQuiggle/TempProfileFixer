@@ -24,6 +24,14 @@ if ($manifestText -match 'requireAdministrator') {
     throw 'The application manifest should not require UAC before help or diagnostics can run.'
 }
 
+$sourceText = Get-Content -LiteralPath (Join-Path $repoRoot 'src\TempProfileFixer.App.cs') -Raw
+if ($sourceText -notmatch 'Skipped unreadable ProfileList key') {
+    throw 'ProfileList enumeration should report skipped unreadable subkeys instead of failing the whole scan.'
+}
+if ($sourceText -notmatch 'AddWarning\("ProfileList registry"') {
+    throw 'Diagnostics should report partial ProfileList registry reads as warnings.'
+}
+
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).
     IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
