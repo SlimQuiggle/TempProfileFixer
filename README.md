@@ -229,6 +229,9 @@ The app does not collect the target user's password and does not try to create a
 fake interactive sign-in. Windows creates the fresh profile when the target user
 signs in normally after the next reboot.
 
+Delete Profile removes directory reparse points, such as profile junctions,
+without recursing into their targets.
+
 ## Backups and logs
 
 Before registry keys are deleted, the app exports matching ProfileList keys to:

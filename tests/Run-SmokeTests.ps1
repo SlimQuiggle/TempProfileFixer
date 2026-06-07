@@ -40,6 +40,15 @@ if ($sourceText -notmatch 'AddWarning\("Win32_UserProfile"') {
 if ($sourceText -notmatch 'Win32_UserProfile query warning') {
     throw 'Profile inventory should surface partial Win32_UserProfile warnings.'
 }
+if ($sourceText -notmatch 'FileAttributes\.ReparsePoint') {
+    throw 'Profile deletion should detect directory reparse points instead of recursing through them.'
+}
+if ($sourceText -match 'GetFiles\("\*", SearchOption\.AllDirectories\)') {
+    throw 'Profile deletion should not recursively enumerate files with SearchOption.AllDirectories.'
+}
+if ($sourceText -match 'GetDirectories\("\*", SearchOption\.AllDirectories\)') {
+    throw 'Profile deletion should not recursively enumerate directories with SearchOption.AllDirectories.'
+}
 $runMethodStart = $sourceText.IndexOf('public static int Run(string[] args)', [StringComparison]::Ordinal)
 $helpCommandIndex = $sourceText.IndexOf('IsHelpCommand(command)', $runMethodStart, [StringComparison]::Ordinal)
 $parseArgsIndex = $sourceText.IndexOf('ParsedArgs.Parse', $runMethodStart, [StringComparison]::Ordinal)

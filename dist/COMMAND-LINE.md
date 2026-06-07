@@ -193,6 +193,8 @@ Useful switches:
 Rebuild and delete actions are blocked when the selected profile is current,
 loaded, special/system, missing a matching ProfileList SID, matched ambiguously,
 or loaded state cannot be verified. Registry keys are exported before deletion.
+Delete Profile removes directory reparse points, such as profile junctions,
+without recursing into their targets.
 
 ## Troubleshooting startup failures
 

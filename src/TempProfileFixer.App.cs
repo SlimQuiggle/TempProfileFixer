@@ -2057,7 +2057,7 @@ namespace TempProfileFixer
                 }
 
                 WriteLog(logPath, "Deleting profile folder " + plan.ProfilePath);
-                DeleteDirectoryTree(plan.ProfilePath);
+                DeleteDirectoryTree(plan.ProfilePath, logPath);
 
                 foreach (string keyName in plan.RegistryKeyNames)
                 {
@@ -2766,7 +2766,7 @@ namespace TempProfileFixer
             }
         }
 
-        private static void DeleteDirectoryTree(string directoryPath)
+        private static void DeleteDirectoryTree(string directoryPath, string logPath)
         {
             if (!Directory.Exists(directoryPath))
             {
@@ -2774,18 +2774,125 @@ namespace TempProfileFixer
             }
 
             DirectoryInfo root = new DirectoryInfo(directoryPath);
-            foreach (FileInfo file in root.GetFiles("*", SearchOption.AllDirectories))
+            if (IsDirectoryReparsePoint(root))
             {
-                file.Attributes = FileAttributes.Normal;
+                DeleteDirectoryReparsePoint(root, logPath);
+                return;
             }
 
-            foreach (DirectoryInfo directory in root.GetDirectories("*", SearchOption.AllDirectories))
+            DeleteDirectoryContents(root, logPath);
+            ClearDirectoryAttributes(root, logPath);
+            DeleteEmptyDirectory(root, logPath);
+        }
+
+        private static void DeleteDirectoryContents(DirectoryInfo directory, string logPath)
+        {
+            foreach (FileInfo file in GetFilesForDelete(directory))
             {
-                directory.Attributes = FileAttributes.Normal;
+                DeleteFileForProfileCleanup(file, logPath);
             }
 
-            root.Attributes = FileAttributes.Normal;
-            root.Delete(true);
+            foreach (DirectoryInfo child in GetDirectoriesForDelete(directory))
+            {
+                if (IsDirectoryReparsePoint(child))
+                {
+                    DeleteDirectoryReparsePoint(child, logPath);
+                    continue;
+                }
+
+                DeleteDirectoryContents(child, logPath);
+                ClearDirectoryAttributes(child, logPath);
+                DeleteEmptyDirectory(child, logPath);
+            }
+        }
+
+        private static FileInfo[] GetFilesForDelete(DirectoryInfo directory)
+        {
+            try
+            {
+                return directory.GetFiles();
+            }
+            catch (Exception ex)
+            {
+                throw new IOException("Could not list files in '" + directory.FullName + "': " + ex.Message, ex);
+            }
+        }
+
+        private static DirectoryInfo[] GetDirectoriesForDelete(DirectoryInfo directory)
+        {
+            try
+            {
+                return directory.GetDirectories();
+            }
+            catch (Exception ex)
+            {
+                throw new IOException("Could not list folders in '" + directory.FullName + "': " + ex.Message, ex);
+            }
+        }
+
+        private static void DeleteFileForProfileCleanup(FileInfo file, string logPath)
+        {
+            try
+            {
+                if ((file.Attributes & FileAttributes.ReadOnly) == FileAttributes.ReadOnly)
+                {
+                    file.Attributes = file.Attributes & ~FileAttributes.ReadOnly;
+                }
+
+                file.Delete();
+            }
+            catch (Exception ex)
+            {
+                WriteLog(logPath, "Failed to delete file " + file.FullName + ": " + ex.Message);
+                throw new IOException("Could not delete file '" + file.FullName + "': " + ex.Message, ex);
+            }
+        }
+
+        private static void DeleteDirectoryReparsePoint(DirectoryInfo directory, string logPath)
+        {
+            try
+            {
+                WriteLog(logPath, "Deleting directory reparse point " + directory.FullName);
+                ClearDirectoryAttributes(directory, logPath);
+                directory.Delete(false);
+            }
+            catch (Exception ex)
+            {
+                WriteLog(logPath, "Failed to delete directory reparse point " + directory.FullName + ": " + ex.Message);
+                throw new IOException("Could not delete directory reparse point '" + directory.FullName + "': " + ex.Message, ex);
+            }
+        }
+
+        private static void DeleteEmptyDirectory(DirectoryInfo directory, string logPath)
+        {
+            try
+            {
+                directory.Delete(false);
+            }
+            catch (Exception ex)
+            {
+                WriteLog(logPath, "Failed to delete folder " + directory.FullName + ": " + ex.Message);
+                throw new IOException("Could not delete folder '" + directory.FullName + "': " + ex.Message, ex);
+            }
+        }
+
+        private static void ClearDirectoryAttributes(DirectoryInfo directory, string logPath)
+        {
+            try
+            {
+                directory.Attributes = directory.Attributes &
+                    ~(FileAttributes.ReadOnly | FileAttributes.Hidden | FileAttributes.System);
+            }
+            catch (Exception ex)
+            {
+                WriteLog(logPath, "Failed to clear folder attributes " + directory.FullName + ": " + ex.Message);
+                throw new IOException("Could not clear folder attributes for '" + directory.FullName + "': " + ex.Message, ex);
+            }
+        }
+
+        private static bool IsDirectoryReparsePoint(DirectoryInfo directory)
+        {
+            return (directory.Attributes & FileAttributes.ReparsePoint) == FileAttributes.ReparsePoint;
         }
 
         private static string GetAppDirectory()
