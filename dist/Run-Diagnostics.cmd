@@ -17,7 +17,7 @@ echo.
 if "%EXITCODE%"=="0" (
     echo Diagnostics completed without reported failures.
 ) else (
-    echo Diagnostics reported one or more failures.
+    echo Diagnostics reported one or more failures or warnings.
     echo Review the messages above before rebuilding a profile on this computer.
 )
 echo.

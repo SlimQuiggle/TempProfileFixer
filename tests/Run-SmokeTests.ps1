@@ -197,6 +197,11 @@ foreach ($packagedFile in @('README.md', 'COMMAND-LINE.md', 'TempProfileFixer.ex
     }
 }
 
+$diagnosticsLauncherText = Get-Content -LiteralPath (Join-Path $repoRoot 'dist\Run-Diagnostics.cmd') -Raw
+if ($diagnosticsLauncherText -notmatch 'failures or warnings') {
+    throw 'Run-Diagnostics.cmd should describe nonzero doctor results as failures or warnings.'
+}
+
 $checksumText = Get-Content -LiteralPath (Join-Path $repoRoot 'dist\SHA256SUMS.txt') -Raw
 foreach ($checksumFile in @('TempProfileFixer.exe', 'TempProfileFixer.exe.config', 'TempProfileFixer.cmd', 'Run-Diagnostics.cmd', 'Unblock-Package.cmd', 'README.md', 'COMMAND-LINE.md')) {
     if ($checksumText -notmatch [regex]::Escape($checksumFile)) {
