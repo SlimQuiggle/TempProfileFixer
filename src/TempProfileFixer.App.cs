@@ -1590,7 +1590,7 @@ namespace TempProfileFixer
             List<ProfileListEntry> entries;
             try
             {
-                entries = GetProfileListEntries(target.ComputerName);
+                entries = GetProfileListEntries(target);
             }
             catch (Exception ex)
             {
@@ -1615,6 +1615,8 @@ namespace TempProfileFixer
             report.AddOk("Operating system", Environment.OSVersion.VersionString);
             report.AddOk(".NET runtime", Environment.Version.ToString());
             report.AddOk("Process architecture", (Environment.Is64BitProcess ? "64-bit process" : "32-bit process") + " on " + (Environment.Is64BitOperatingSystem ? "64-bit Windows" : "32-bit Windows"));
+            report.AddOk("Configured users root", target.UsersRoot);
+            report.AddOk("Configured registry profile root", target.ProfileImageRoot);
 
             if (IsAdministrator())
             {
@@ -1657,7 +1659,7 @@ namespace TempProfileFixer
 
             try
             {
-                List<ProfileListEntry> entries = GetProfileListEntries(target.ComputerName);
+                List<ProfileListEntry> entries = GetProfileListEntries(target);
                 report.AddOk("ProfileList registry", target.RegistryPath + " readable; " + entries.Count + " key(s) found.");
             }
             catch (Exception ex)
@@ -2157,6 +2159,30 @@ namespace TempProfileFixer
             return expanded.TrimEnd('\\').ToUpperInvariant();
         }
 
+        public static string NormalizeRegistryProfilePath(string profileImagePath, string profileImageRoot)
+        {
+            if (String.IsNullOrWhiteSpace(profileImagePath))
+            {
+                return String.Empty;
+            }
+
+            string path = profileImagePath.Trim().Replace('/', '\\');
+            const string systemDriveToken = "%SystemDrive%";
+            if (path.StartsWith(systemDriveToken, StringComparison.OrdinalIgnoreCase))
+            {
+                string root = GetDriveRoot(profileImageRoot);
+                if (!String.IsNullOrWhiteSpace(root))
+                {
+                    string suffix = path.Substring(systemDriveToken.Length).TrimStart('\\');
+                    path = String.IsNullOrWhiteSpace(suffix)
+                        ? root
+                        : Path.Combine(root, suffix);
+                }
+            }
+
+            return NormalizePath(path);
+        }
+
         public static string GetBaseSid(string sidOrKeyName)
         {
             if (sidOrKeyName != null && sidOrKeyName.EndsWith(".bak", StringComparison.OrdinalIgnoreCase))
@@ -2231,7 +2257,17 @@ namespace TempProfileFixer
                 .ToList();
         }
 
-        private static List<ProfileListEntry> GetProfileListEntries(string computerName)
+        private static List<ProfileListEntry> GetProfileListEntries(ProfileTarget target)
+        {
+            if (target == null)
+            {
+                throw new ArgumentNullException("target");
+            }
+
+            return GetProfileListEntries(target.ComputerName, target.ProfileImageRoot);
+        }
+
+        private static List<ProfileListEntry> GetProfileListEntries(string computerName, string profileImageRoot)
         {
             List<ProfileListEntry> entries = new List<ProfileListEntry>();
             RegistryView view = Environment.Is64BitOperatingSystem ? RegistryView.Registry64 : RegistryView.Default;
@@ -2252,14 +2288,14 @@ namespace TempProfileFixer
                             continue;
                         }
 
-                        string imagePath = Convert.ToString(key.GetValue("ProfileImagePath", String.Empty));
+                        string imagePath = Convert.ToString(key.GetValue("ProfileImagePath", String.Empty, RegistryValueOptions.DoNotExpandEnvironmentNames));
                         entries.Add(new ProfileListEntry
                         {
                             KeyName = keyName,
                             BaseSid = GetBaseSid(keyName),
                             IsBak = keyName.EndsWith(".bak", StringComparison.OrdinalIgnoreCase),
                             ProfileImagePath = imagePath,
-                            NormalizedProfilePath = NormalizePath(imagePath),
+                            NormalizedProfilePath = NormalizeRegistryProfilePath(imagePath, profileImageRoot),
                             State = key.GetValue("State"),
                             RefCount = key.GetValue("RefCount")
                         });
@@ -2488,6 +2524,41 @@ namespace TempProfileFixer
             return IsRemoteComputer(computerName)
                 ? RegistryKey.OpenRemoteBaseKey(RegistryHive.LocalMachine, computerName.Trim().TrimStart('\\'), view)
                 : RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view);
+        }
+
+        private static string GetDriveRoot(string path)
+        {
+            if (String.IsNullOrWhiteSpace(path))
+            {
+                return String.Empty;
+            }
+
+            string trimmed = path.Trim().Replace('/', '\\');
+            if (trimmed.Length >= 2 && Char.IsLetter(trimmed[0]) && trimmed[1] == ':')
+            {
+                return Char.ToUpperInvariant(trimmed[0]) + @":\";
+            }
+
+            Match adminShareMatch = Regex.Match(trimmed, @"^\\\\[^\\]+\\([A-Za-z])\$($|\\)");
+            if (adminShareMatch.Success)
+            {
+                return Char.ToUpperInvariant(adminShareMatch.Groups[1].Value[0]) + @":\";
+            }
+
+            try
+            {
+                string expanded = Environment.ExpandEnvironmentVariables(trimmed);
+                string root = Path.GetPathRoot(expanded);
+                if (!String.IsNullOrWhiteSpace(root) && root.Length >= 2 && Char.IsLetter(root[0]) && root[1] == ':')
+                {
+                    return Char.ToUpperInvariant(root[0]) + @":\";
+                }
+            }
+            catch
+            {
+            }
+
+            return String.Empty;
         }
 
         private static void ExportRegistryKey(string keyName, string destinationPath, string computerName)

@@ -108,6 +108,27 @@ if (($profileDryRunOutput -join "`n") -notmatch 'Blocked') {
     throw 'dry-run by profile name for the current profile should be blocked.'
 }
 
+$assembly = [Reflection.Assembly]::LoadFrom($exe)
+$profileServiceType = $assembly.GetType('TempProfileFixer.ProfileService', $true)
+$normalizeRegistryMethod = $profileServiceType.GetMethod(
+    'NormalizeRegistryProfilePath',
+    [Reflection.BindingFlags] 'Public, Static')
+if ($null -eq $normalizeRegistryMethod) {
+    throw 'ProfileService.NormalizeRegistryProfilePath was not found.'
+}
+$normalizedRemoteRegistryPath = $normalizeRegistryMethod.Invoke($null, @('%SystemDrive%\Users\RemoteUser', 'D:\Users'))
+if ($normalizedRemoteRegistryPath -ne 'D:\USERS\REMOTEUSER') {
+    throw "Registry ProfileImagePath normalization used the wrong system drive: $normalizedRemoteRegistryPath"
+}
+$normalizedAdminShareRegistryPath = $normalizeRegistryMethod.Invoke($null, @('%SystemDrive%\Users\RemoteUser', '\\PC-1234\E$\Users'))
+if ($normalizedAdminShareRegistryPath -ne 'E:\USERS\REMOTEUSER') {
+    throw "Registry ProfileImagePath normalization did not infer drive from admin share: $normalizedAdminShareRegistryPath"
+}
+$normalizedLiteralRegistryPath = $normalizeRegistryMethod.Invoke($null, @('E:\Profiles\RemoteUser', 'D:\Users'))
+if ($normalizedLiteralRegistryPath -ne 'E:\PROFILES\REMOTEUSER') {
+    throw "Literal registry ProfileImagePath normalization changed unexpectedly: $normalizedLiteralRegistryPath"
+}
+
 foreach ($packagedFile in @('README.md', 'COMMAND-LINE.md', 'TempProfileFixer.exe.config', 'TempProfileFixer.cmd', 'Run-Diagnostics.cmd', 'Unblock-Package.cmd', 'SHA256SUMS.txt', 'TempProfileFixer-portable.zip')) {
     $packagedPath = Join-Path $repoRoot (Join-Path 'dist' $packagedFile)
     if (-not (Test-Path -LiteralPath $packagedPath)) {

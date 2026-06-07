@@ -248,6 +248,7 @@ Run diagnostics first:
 The diagnostic report checks:
 
 - administrator elevation
+- configured users root and registry profile root
 - readable `C:\Users` or remote users root
 - readable `HKLM\...\ProfileList`
 - `Win32_UserProfile` WMI access
