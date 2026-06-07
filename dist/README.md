@@ -28,6 +28,9 @@ non-destructive diagnostics command from an elevated prompt:
 .\dist\TempProfileFixer.exe doctor
 ```
 
+For another computer, use the latest GitHub release ZIP:
+[TempProfileFixer-portable.zip](https://github.com/SlimQuiggle/TempProfileFixer/releases/latest).
+
 ## Build
 
 Build the standalone executable with the .NET Framework compiler included with
@@ -51,9 +54,9 @@ dist\SHA256SUMS.txt
 dist\TempProfileFixer-portable.zip
 ```
 
-For another computer, copy `dist\TempProfileFixer-portable.zip`, extract it
-locally, and run `Run-Diagnostics.cmd` first. The ZIP keeps the EXE, runtime
-config, launchers, docs, and checksums together.
+For another computer, copy `dist\TempProfileFixer-portable.zip` or download the
+latest release ZIP, extract it locally, and run `Run-Diagnostics.cmd` first. The
+ZIP keeps the EXE, runtime config, launchers, docs, and checksums together.
 
 ## Run
 

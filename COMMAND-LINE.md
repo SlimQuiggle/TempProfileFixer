@@ -8,9 +8,11 @@ same folder. It checks for Microsoft .NET Framework 4.x Full and then starts the
 EXE with the same arguments.
 
 For the most reliable transfer to another computer, use
-`TempProfileFixer-portable.zip` from the `dist` folder. Extract the ZIP locally
-and run `Run-Diagnostics.cmd` before rebuilding a profile. That helper keeps the
-window open so the diagnostics output can be read after a double-click launch.
+`TempProfileFixer-portable.zip` from the latest GitHub release:
+https://github.com/SlimQuiggle/TempProfileFixer/releases/latest. Extract the ZIP
+locally and run `Run-Diagnostics.cmd` before rebuilding a profile. That helper
+keeps the window open so the diagnostics output can be read after a double-click
+launch.
 If Windows blocks the extracted files, run `Unblock-Package.cmd` only after
 confirming the ZIP came from the trusted GitHub release.
 
