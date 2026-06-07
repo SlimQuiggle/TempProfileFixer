@@ -1165,7 +1165,7 @@ namespace TempProfileFixer
             AppendHeading(box, "What should I run if the tool fails on a computer?");
             AppendParagraph(box, "Run TempProfileFixer.exe doctor from an elevated prompt on that computer. The diagnostics output checks elevation, users root access, ProfileList registry access, WMI profile state, helper tools, and writable log storage.");
             AppendHeading(box, "What if the EXE does not launch at all?");
-            AppendParagraph(box, "Use the packaged TempProfileFixer.cmd launcher from the same folder. It checks for Microsoft .NET Framework 4.x Full before starting the EXE, which gives a clearer message on older or stripped-down Windows builds.");
+            AppendParagraph(box, "Use the packaged Run-Diagnostics.cmd helper from the same folder. It checks launch prerequisites, runs doctor, and keeps the window open so the result is readable after a double-click launch.");
         }
 
         private static void AddCommandLineHelpTab(TabControl tabs)

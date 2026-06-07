@@ -38,6 +38,7 @@ $source = Join-Path $repoRoot 'src\TempProfileFixer.App.cs'
 $manifest = Join-Path $repoRoot 'TempProfileFixer.exe.manifest'
 $appConfig = Join-Path $repoRoot 'TempProfileFixer.exe.config'
 $launcher = Join-Path $repoRoot 'TempProfileFixer.cmd'
+$diagnosticsLauncher = Join-Path $repoRoot 'Run-Diagnostics.cmd'
 $icon = Join-Path $repoRoot 'assets\TempProfileFixer.ico'
 $png = Join-Path $repoRoot 'assets\TempProfileFixer.png'
 
@@ -82,11 +83,13 @@ if ((Split-Path -Parent $outFile) -eq $dist) {
     Copy-Item -LiteralPath $commandLineReadme -Destination (Join-Path $dist 'COMMAND-LINE.md') -Force
     Copy-Item -LiteralPath $appConfig -Destination (Join-Path $dist 'TempProfileFixer.exe.config') -Force
     Copy-Item -LiteralPath $launcher -Destination (Join-Path $dist 'TempProfileFixer.cmd') -Force
+    Copy-Item -LiteralPath $diagnosticsLauncher -Destination (Join-Path $dist 'Run-Diagnostics.cmd') -Force
 
     $packageFiles = @(
         'TempProfileFixer.exe',
         'TempProfileFixer.exe.config',
         'TempProfileFixer.cmd',
+        'Run-Diagnostics.cmd',
         'README.md',
         'COMMAND-LINE.md'
     )

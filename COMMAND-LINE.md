@@ -9,7 +9,8 @@ EXE with the same arguments.
 
 For the most reliable transfer to another computer, use
 `TempProfileFixer-portable.zip` from the `dist` folder. Extract the ZIP locally
-and run `TempProfileFixer.cmd doctor` before rebuilding a profile.
+and run `Run-Diagnostics.cmd` before rebuilding a profile. That helper keeps the
+window open so the diagnostics output can be read after a double-click launch.
 
 ## Profile selection
 
@@ -180,6 +181,12 @@ Run this first on a computer where the tool fails:
 
 ```powershell
 .\TempProfileFixer.exe doctor
+```
+
+For an interactive double-click check, run:
+
+```powershell
+.\Run-Diagnostics.cmd
 ```
 
 The report checks elevation, users-root access, ProfileList registry access,

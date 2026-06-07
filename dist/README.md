@@ -40,6 +40,7 @@ The output is:
 ```text
 dist\TempProfileFixer.exe
 dist\TempProfileFixer.cmd
+dist\Run-Diagnostics.cmd
 dist\TempProfileFixer.exe.config
 dist\README.md
 dist\COMMAND-LINE.md
@@ -48,8 +49,8 @@ dist\TempProfileFixer-portable.zip
 ```
 
 For another computer, copy `dist\TempProfileFixer-portable.zip`, extract it
-locally, and run `TempProfileFixer.cmd doctor` first. The ZIP keeps the EXE,
-runtime config, launcher, docs, and checksums together.
+locally, and run `Run-Diagnostics.cmd` first. The ZIP keeps the EXE, runtime
+config, launchers, docs, and checksums together.
 
 ## Run
 
@@ -67,6 +68,8 @@ If a workstation will not launch the EXE directly, try the packaged launcher:
 
 The launcher checks for Microsoft .NET Framework 4.x Full before starting the
 EXE, which gives a clearer error on older or stripped-down Windows builds.
+For a double-clickable compatibility check that keeps the window open, use
+`Run-Diagnostics.cmd`.
 
 Use the visible `Help / FAQ` button in the header, or `Help` > `Help / FAQ` in
 the menu bar, for a formatted overview of each button, right-click actions,

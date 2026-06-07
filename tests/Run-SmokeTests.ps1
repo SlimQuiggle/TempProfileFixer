@@ -108,7 +108,7 @@ if (($profileDryRunOutput -join "`n") -notmatch 'Blocked') {
     throw 'dry-run by profile name for the current profile should be blocked.'
 }
 
-foreach ($packagedFile in @('README.md', 'COMMAND-LINE.md', 'TempProfileFixer.exe.config', 'TempProfileFixer.cmd', 'SHA256SUMS.txt', 'TempProfileFixer-portable.zip')) {
+foreach ($packagedFile in @('README.md', 'COMMAND-LINE.md', 'TempProfileFixer.exe.config', 'TempProfileFixer.cmd', 'Run-Diagnostics.cmd', 'SHA256SUMS.txt', 'TempProfileFixer-portable.zip')) {
     $packagedPath = Join-Path $repoRoot (Join-Path 'dist' $packagedFile)
     if (-not (Test-Path -LiteralPath $packagedPath)) {
         throw "Expected packaged file is missing: $packagedPath"
@@ -116,7 +116,7 @@ foreach ($packagedFile in @('README.md', 'COMMAND-LINE.md', 'TempProfileFixer.ex
 }
 
 $checksumText = Get-Content -LiteralPath (Join-Path $repoRoot 'dist\SHA256SUMS.txt') -Raw
-foreach ($checksumFile in @('TempProfileFixer.exe', 'TempProfileFixer.exe.config', 'TempProfileFixer.cmd', 'README.md', 'COMMAND-LINE.md')) {
+foreach ($checksumFile in @('TempProfileFixer.exe', 'TempProfileFixer.exe.config', 'TempProfileFixer.cmd', 'Run-Diagnostics.cmd', 'README.md', 'COMMAND-LINE.md')) {
     if ($checksumText -notmatch [regex]::Escape($checksumFile)) {
         throw "Checksum file does not include $checksumFile."
     }
@@ -127,7 +127,7 @@ $zipPath = Join-Path $repoRoot 'dist\TempProfileFixer-portable.zip'
 $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
 try {
     $zipNames = @($zip.Entries | ForEach-Object { $_.FullName })
-    foreach ($zipFile in @('TempProfileFixer.exe', 'TempProfileFixer.exe.config', 'TempProfileFixer.cmd', 'README.md', 'COMMAND-LINE.md', 'SHA256SUMS.txt')) {
+    foreach ($zipFile in @('TempProfileFixer.exe', 'TempProfileFixer.exe.config', 'TempProfileFixer.cmd', 'Run-Diagnostics.cmd', 'README.md', 'COMMAND-LINE.md', 'SHA256SUMS.txt')) {
         if ($zipNames -notcontains $zipFile) {
             throw "Portable ZIP does not include $zipFile."
         }
