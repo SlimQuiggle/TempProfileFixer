@@ -217,7 +217,8 @@ ProfileList registry access, skipped or unreadable ProfileList subkeys, WMI
 profile state, skipped or unreadable WMI rows, `reg.exe`, `shutdown.exe`, and
 writable data storage. Backup, log, and diagnostic files are written under the
 first writable location the tool can use: the EXE folder,
-`C:\ProgramData\TempProfileFixer`, or the current user's Temp folder.
+`C:\ProgramData\TempProfileFixer`, the current user's Temp folder, or the
+current working directory if normal Windows data paths are unavailable.
 
 If Windows blocks a downloaded EXE, open the file properties and use `Unblock`,
 or run it from an elevated PowerShell prompt after confirming the file is trusted.

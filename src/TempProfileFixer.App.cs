@@ -145,19 +145,14 @@ namespace TempProfileFixer
         public static string GetDataDirectory()
         {
             List<string> candidates = new List<string>();
-            string baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
-            if (!String.IsNullOrWhiteSpace(baseDirectory))
-            {
-                candidates.Add(baseDirectory);
-            }
+            AddPathCandidate(candidates, SafeGetBaseDirectory());
 
-            string commonAppData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
-            if (!String.IsNullOrWhiteSpace(commonAppData))
-            {
-                candidates.Add(Path.Combine(commonAppData, "TempProfileFixer"));
-            }
+            string commonAppData = SafeGetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+            AddPathCandidate(candidates, SafeCombine(commonAppData, "TempProfileFixer"));
 
-            candidates.Add(Path.Combine(Path.GetTempPath(), "TempProfileFixer"));
+            string tempPath = SafeGetTempPath();
+            AddPathCandidate(candidates, SafeCombine(tempPath, "TempProfileFixer"));
+            AddPathCandidate(candidates, SafeGetCurrentDirectory());
 
             foreach (string candidate in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
             {
@@ -167,7 +162,12 @@ namespace TempProfileFixer
                 }
             }
 
-            return Path.GetTempPath();
+            foreach (string candidate in candidates.Where(c => !String.IsNullOrWhiteSpace(c)).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                return candidate;
+            }
+
+            return ".";
         }
 
         public static string GetLogDirectory()
@@ -187,13 +187,13 @@ namespace TempProfileFixer
                 builder.AppendLine("Temp Profile Fixer diagnostic log");
                 builder.AppendLine("Context: " + context);
                 builder.AppendLine("Timestamp: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-                builder.AppendLine("Machine: " + Environment.MachineName);
-                builder.AppendLine("User: " + Environment.UserDomainName + "\\" + Environment.UserName);
-                builder.AppendLine("OS: " + Environment.OSVersion.VersionString);
-                builder.AppendLine(".NET: " + Environment.Version);
-                builder.AppendLine("64-bit OS: " + Environment.Is64BitOperatingSystem);
-                builder.AppendLine("64-bit process: " + Environment.Is64BitProcess);
-                builder.AppendLine("Executable: " + Application.ExecutablePath);
+                builder.AppendLine("Machine: " + SafeDiagnosticValue(delegate { return Environment.MachineName; }));
+                builder.AppendLine("User: " + SafeDiagnosticValue(delegate { return Environment.UserDomainName + "\\" + Environment.UserName; }));
+                builder.AppendLine("OS: " + SafeDiagnosticValue(delegate { return Environment.OSVersion.VersionString; }));
+                builder.AppendLine(".NET: " + SafeDiagnosticValue(delegate { return Environment.Version.ToString(); }));
+                builder.AppendLine("64-bit OS: " + SafeDiagnosticValue(delegate { return Environment.Is64BitOperatingSystem.ToString(); }));
+                builder.AppendLine("64-bit process: " + SafeDiagnosticValue(delegate { return Environment.Is64BitProcess.ToString(); }));
+                builder.AppendLine("Executable: " + SafeDiagnosticValue(delegate { return Application.ExecutablePath; }));
                 builder.AppendLine();
                 builder.AppendLine(ex.ToString());
                 File.WriteAllText(logPath, builder.ToString(), Encoding.UTF8);
@@ -218,6 +218,130 @@ namespace TempProfileFixer
             catch
             {
                 return false;
+            }
+        }
+
+        public static string GetSystemToolPath(string fileName)
+        {
+            List<string> candidates = new List<string>();
+            AddPathCandidate(candidates, SafeCombine(SafeGetFolderPath(Environment.SpecialFolder.System), fileName));
+            AddPathCandidate(candidates, SafeCombine(SafeCombine(SafeGetEnvironmentVariable("SystemRoot"), "System32"), fileName));
+            AddPathCandidate(candidates, SafeCombine(SafeCombine(SafeGetEnvironmentVariable("WINDIR"), "System32"), fileName));
+
+            foreach (string candidate in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (!String.IsNullOrWhiteSpace(candidate) && File.Exists(candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            foreach (string candidate in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (!String.IsNullOrWhiteSpace(candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            return fileName;
+        }
+
+        private static void AddPathCandidate(List<string> candidates, string path)
+        {
+            if (!String.IsNullOrWhiteSpace(path))
+            {
+                candidates.Add(path);
+            }
+        }
+
+        private static string SafeGetBaseDirectory()
+        {
+            try
+            {
+                return AppDomain.CurrentDomain.BaseDirectory;
+            }
+            catch
+            {
+                return String.Empty;
+            }
+        }
+
+        private static string SafeGetCurrentDirectory()
+        {
+            try
+            {
+                return Directory.GetCurrentDirectory();
+            }
+            catch
+            {
+                return String.Empty;
+            }
+        }
+
+        private static string SafeGetTempPath()
+        {
+            try
+            {
+                return Path.GetTempPath();
+            }
+            catch
+            {
+                return String.Empty;
+            }
+        }
+
+        private static string SafeGetFolderPath(Environment.SpecialFolder folder)
+        {
+            try
+            {
+                return Environment.GetFolderPath(folder);
+            }
+            catch
+            {
+                return String.Empty;
+            }
+        }
+
+        private static string SafeGetEnvironmentVariable(string name)
+        {
+            try
+            {
+                return Environment.GetEnvironmentVariable(name);
+            }
+            catch
+            {
+                return String.Empty;
+            }
+        }
+
+        private static string SafeCombine(string left, string right)
+        {
+            if (String.IsNullOrWhiteSpace(left) || String.IsNullOrWhiteSpace(right))
+            {
+                return String.Empty;
+            }
+
+            try
+            {
+                return Path.Combine(left, right);
+            }
+            catch
+            {
+                return String.Empty;
+            }
+        }
+
+        private static string SafeDiagnosticValue(Func<string> valueFactory)
+        {
+            try
+            {
+                string value = valueFactory();
+                return String.IsNullOrWhiteSpace(value) ? "(unavailable)" : value;
+            }
+            catch (Exception ex)
+            {
+                return "(unavailable: " + ex.GetType().Name + ")";
             }
         }
     }
@@ -1712,8 +1836,8 @@ namespace TempProfileFixer
                 report.AddFailure("Writable data folder", "Could not write to " + dataDirectory + ".");
             }
 
-            CheckFileExists(report, "reg.exe", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "reg.exe"));
-            CheckFileExists(report, "shutdown.exe", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "shutdown.exe"));
+            CheckFileExists(report, "reg.exe", AppDiagnostics.GetSystemToolPath("reg.exe"));
+            CheckFileExists(report, "shutdown.exe", AppDiagnostics.GetSystemToolPath("shutdown.exe"));
 
             try
             {
@@ -2144,7 +2268,7 @@ namespace TempProfileFixer
         public static void RebootComputer(string computerName)
         {
             ProcessStartInfo startInfo = new ProcessStartInfo();
-            startInfo.FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "shutdown.exe");
+            startInfo.FileName = AppDiagnostics.GetSystemToolPath("shutdown.exe");
             string target = IsRemoteComputer(computerName) ? " /m \\\\" + computerName.Trim().TrimStart('\\') : String.Empty;
             startInfo.Arguments = "/r" + target + " /t 0 /c \"Temp Profile Fixer requested reboot after profile rebuild.\"";
             startInfo.UseShellExecute = false;
@@ -2736,7 +2860,7 @@ namespace TempProfileFixer
         {
             string regPath = GetProfileListRegPath(computerName) + "\\" + keyName;
             ProcessStartInfo startInfo = new ProcessStartInfo();
-            startInfo.FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "reg.exe");
+            startInfo.FileName = AppDiagnostics.GetSystemToolPath("reg.exe");
             startInfo.Arguments = "export \"" + regPath + "\" \"" + destinationPath + "\" /y";
             startInfo.UseShellExecute = false;
             startInfo.CreateNoWindow = true;

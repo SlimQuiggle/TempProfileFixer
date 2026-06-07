@@ -26,7 +26,8 @@ registry-removal commands require an elevated administrator prompt.
 If the app fails to open or fails on a specific workstation, run the
 non-destructive diagnostics command first. Running it elevated gives the most
 complete result, but it can also run unelevated to show startup and prerequisite
-checks:
+checks. Diagnostic logging is best-effort and falls back when normal Windows
+data paths are damaged:
 
 ```powershell
 .\dist\TempProfileFixer.exe doctor
@@ -251,8 +252,9 @@ and logs under `logs\<timestamp>-<profile-folder>-delete.log`.
 
 The tool writes under the first writable data folder it can use. It tries the
 EXE folder first, then `C:\ProgramData\TempProfileFixer`, then the current user's
-Temp folder. This avoids failures when the EXE is launched from a read-only share
-or restricted folder.
+Temp folder, then the current working directory if the normal Windows data paths
+are unavailable. This avoids failures when the EXE is launched from a read-only
+share, restricted folder, or workstation with broken Temp path configuration.
 
 The old profile folder is preserved as `C:\Users\<name>.old<yyyyMMdd-HHmmss>`.
 If that path already exists, a numeric suffix is added.

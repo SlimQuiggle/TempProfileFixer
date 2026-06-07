@@ -49,6 +49,12 @@ if ($sourceText -match 'GetFiles\("\*", SearchOption\.AllDirectories\)') {
 if ($sourceText -match 'GetDirectories\("\*", SearchOption\.AllDirectories\)') {
     throw 'Profile deletion should not recursively enumerate directories with SearchOption.AllDirectories.'
 }
+if ($sourceText -notmatch 'SafeGetTempPath') {
+    throw 'Diagnostic storage should tolerate a broken Temp environment path.'
+}
+if ($sourceText -match 'Path\.Combine\(Environment\.GetFolderPath\(Environment\.SpecialFolder\.System\)') {
+    throw 'System tool lookup should not depend on a single unguarded GetFolderPath(System) call.'
+}
 $runMethodStart = $sourceText.IndexOf('public static int Run(string[] args)', [StringComparison]::Ordinal)
 $helpCommandIndex = $sourceText.IndexOf('IsHelpCommand(command)', $runMethodStart, [StringComparison]::Ordinal)
 $parseArgsIndex = $sourceText.IndexOf('ParsedArgs.Parse', $runMethodStart, [StringComparison]::Ordinal)
@@ -166,6 +172,16 @@ if (($profileDryRunOutput -join "`n") -notmatch 'Blocked') {
 }
 
 $assembly = [Reflection.Assembly]::LoadFrom($exe)
+$appDiagnosticsType = $assembly.GetType('TempProfileFixer.AppDiagnostics', $true)
+$getSystemToolPathMethod = $appDiagnosticsType.GetMethod('GetSystemToolPath', [Reflection.BindingFlags] 'Public, Static')
+$regToolPath = [string]$getSystemToolPathMethod.Invoke($null, @('reg.exe'))
+if ([string]::IsNullOrWhiteSpace($regToolPath) -or (Split-Path -Leaf $regToolPath) -ne 'reg.exe') {
+    throw "System tool resolver returned an invalid reg.exe path: $regToolPath"
+}
+if (-not (Test-Path -LiteralPath $regToolPath)) {
+    throw "System tool resolver returned a reg.exe path that does not exist: $regToolPath"
+}
+
 $compatibilityReportType = $assembly.GetType('TempProfileFixer.CompatibilityReport', $true)
 $warningReport = [Activator]::CreateInstance($compatibilityReportType)
 $compatibilityReportType.GetMethod('AddWarning').Invoke($warningReport, @('ProfileList registry', 'Skipped unreadable ProfileList key(s): S-1-test'))
