@@ -32,11 +32,3 @@ jobs:
       - name: Run smoke tests
         shell: powershell
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Run-SmokeTests.ps1
-
-      - name: Upload portable bundle
-        uses: actions/upload-artifact@v5
-        with:
-          name: TempProfileFixer-portable-${{ matrix.os }}
-          path: |
-            dist/TempProfileFixer-portable.zip
-            dist/SHA256SUMS.txt
