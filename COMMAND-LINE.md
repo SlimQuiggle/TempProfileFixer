@@ -8,7 +8,9 @@ run without pre-elevation.
 
 If the EXE will not launch on a workstation, run `TempProfileFixer.cmd` from the
 same folder. It checks for Microsoft .NET Framework 4.x Full and then starts the
-EXE with the same arguments.
+EXE with the same arguments. The launcher uses the system `reg.exe` path
+directly and checks both registry views so it can still work when the
+workstation's `PATH` is damaged.
 
 For the most reliable transfer to another computer, use
 `TempProfileFixer-portable.zip` from the latest GitHub release:

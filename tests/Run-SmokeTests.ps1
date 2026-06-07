@@ -190,6 +190,24 @@ if ($unblockText -notmatch 'Zone\.Identifier') {
     throw 'Unblock-Package.cmd does not include the older PowerShell Zone.Identifier fallback.'
 }
 
+$launcherText = Get-Content -LiteralPath (Join-Path $repoRoot 'dist\TempProfileFixer.cmd') -Raw
+if ($launcherText -notmatch '%SystemRoot%\\System32\\reg\.exe') {
+    throw 'TempProfileFixer.cmd should use the absolute system reg.exe path for broken PATH environments.'
+}
+if ($launcherText -notmatch '/reg:64' -or $launcherText -notmatch '/reg:32') {
+    throw 'TempProfileFixer.cmd should check both .NET registry views.'
+}
+
+$launcherPath = Join-Path $repoRoot 'dist\TempProfileFixer.cmd'
+$launcherHelpOutput = & $env:ComSpec /d /c "set PATH=& `"$launcherPath`" help" 2>&1
+$launcherHelpExit = $LASTEXITCODE
+if ($launcherHelpExit -ne 0) {
+    throw "TempProfileFixer.cmd help failed with PATH emptied: $launcherHelpOutput"
+}
+if (($launcherHelpOutput -join "`n") -notmatch 'TempProfileFixer\.exe') {
+    throw 'TempProfileFixer.cmd did not pass help through to the EXE when PATH was empty.'
+}
+
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zipPath = Join-Path $repoRoot 'dist\TempProfileFixer-portable.zip'
 $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)

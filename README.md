@@ -77,7 +77,9 @@ If a workstation will not launch the EXE directly, try the packaged launcher:
 ```
 
 The launcher checks for Microsoft .NET Framework 4.x Full before starting the
-EXE, which gives a clearer error on older or stripped-down Windows builds.
+EXE, which gives a clearer error on older or stripped-down Windows builds. It
+uses the system `reg.exe` path directly and checks both registry views so it can
+still work when the workstation's `PATH` is damaged.
 For a double-clickable compatibility check that keeps the window open, use
 `Run-Diagnostics.cmd`.
 
