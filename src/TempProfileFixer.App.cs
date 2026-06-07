@@ -678,7 +678,7 @@ namespace TempProfileFixer
         public static ProfileTarget Local(string usersRoot)
         {
             string root = String.IsNullOrWhiteSpace(usersRoot)
-                ? Path.Combine(Environment.GetEnvironmentVariable("SystemDrive") ?? "C:", "Users")
+                ? Path.Combine(EnsureDriveRoot(Environment.GetEnvironmentVariable("SystemDrive") ?? "C:"), "Users")
                 : usersRoot;
             return new ProfileTarget
             {
@@ -818,7 +818,7 @@ namespace TempProfileFixer
 
         public MainForm()
         {
-            usersRoot = Path.Combine(Environment.GetEnvironmentVariable("SystemDrive") ?? "C:", "Users");
+            usersRoot = ProfileTarget.Local(null).UsersRoot;
 
             Text = "Temp Profile Fixer";
             StartPosition = FormStartPosition.CenterScreen;
@@ -1164,6 +1164,8 @@ namespace TempProfileFixer
             AppendParagraph(box, "Backups and logs are written under backups\\ and logs\\ in the first writable data folder. The tool tries the EXE folder first, then ProgramData\\TempProfileFixer, then the user's Temp folder.");
             AppendHeading(box, "What should I run if the tool fails on a computer?");
             AppendParagraph(box, "Run TempProfileFixer.exe doctor from an elevated prompt on that computer. The diagnostics output checks elevation, users root access, ProfileList registry access, WMI profile state, helper tools, and writable log storage.");
+            AppendHeading(box, "What if the EXE does not launch at all?");
+            AppendParagraph(box, "Use the packaged TempProfileFixer.cmd launcher from the same folder. It checks for Microsoft .NET Framework 4.x Full before starting the EXE, which gives a clearer message on older or stripped-down Windows builds.");
         }
 
         private static void AddCommandLineHelpTab(TabControl tabs)
@@ -1582,11 +1584,21 @@ namespace TempProfileFixer
             }
 
             List<FolderRecord> folders = GetProfileFolders(target);
-            List<ProfileListEntry> entries = GetProfileListEntries(target.ComputerName);
+            string registryError = null;
+            List<ProfileListEntry> entries;
+            try
+            {
+                entries = GetProfileListEntries(target.ComputerName);
+            }
+            catch (Exception ex)
+            {
+                entries = new List<ProfileListEntry>();
+                registryError = ex.Message;
+            }
             string stateError;
             List<UserProfileState> states = GetUserProfileStates(target.ComputerName, out stateError);
             string currentSid = target.IsRemote ? String.Empty : GetCurrentSid();
-            return BuildInventory(folders, entries, states, currentSid, stateError, target.RegistryPath);
+            return BuildInventory(folders, entries, states, currentSid, stateError, target.RegistryPath, registryError);
         }
 
         public static CompatibilityReport RunDiagnostics(ProfileTarget target)
@@ -2308,7 +2320,8 @@ namespace TempProfileFixer
             List<UserProfileState> states,
             string currentSid,
             string stateError,
-            string registryRoot)
+            string registryRoot,
+            string registryError)
         {
             Dictionary<string, UserProfileState> statesBySid = states
                 .Where(s => !String.IsNullOrWhiteSpace(s.Sid))
@@ -2360,6 +2373,11 @@ namespace TempProfileFixer
                 if (!Directory.Exists(folder.FullName))
                 {
                     blockReasons.Add("Folder missing");
+                }
+                if (!String.IsNullOrWhiteSpace(registryError))
+                {
+                    blockReasons.Add("Could not read ProfileList registry");
+                    warnings.Add("ProfileList query failed: " + registryError);
                 }
                 if (baseSids.Count == 0)
                 {

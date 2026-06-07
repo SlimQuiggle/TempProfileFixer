@@ -3,6 +3,10 @@
 Run `TempProfileFixer.exe` from an elevated command prompt. The GUI is opened
 only when no command is supplied.
 
+If the EXE will not launch on a workstation, run `TempProfileFixer.cmd` from the
+same folder. It checks for Microsoft .NET Framework 4.x Full and then starts the
+EXE with the same arguments.
+
 ## Profile selection
 
 Use one of these selectors with commands that operate on a single profile:
@@ -182,3 +186,7 @@ Temp folder.
 
 If Windows blocks a downloaded EXE, open the file properties and use `Unblock`,
 or run it from an elevated PowerShell prompt after confirming the file is trusted.
+
+Temp Profile Fixer targets the .NET Framework 4 runtime. Older or stripped-down
+Windows systems may need .NET Framework 4.x Full installed or enabled before the
+EXE can start.

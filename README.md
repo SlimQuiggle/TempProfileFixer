@@ -39,6 +39,10 @@ The output is:
 
 ```text
 dist\TempProfileFixer.exe
+dist\TempProfileFixer.cmd
+dist\TempProfileFixer.exe.config
+dist\README.md
+dist\COMMAND-LINE.md
 ```
 
 ## Run
@@ -48,6 +52,15 @@ Open the GUI:
 ```powershell
 .\dist\TempProfileFixer.exe
 ```
+
+If a workstation will not launch the EXE directly, try the packaged launcher:
+
+```powershell
+.\dist\TempProfileFixer.cmd
+```
+
+The launcher checks for Microsoft .NET Framework 4.x Full before starting the
+EXE, which gives a clearer error on older or stripped-down Windows builds.
 
 Use the visible `Help / FAQ` button in the header, or `Help` > `Help / FAQ` in
 the menu bar, for a formatted overview of each button, right-click actions,
@@ -223,6 +236,10 @@ The diagnostic report checks:
 If the EXE was downloaded from GitHub and Windows blocks it, open the file
 properties and use `Unblock`, or run it from an elevated PowerShell prompt after
 confirming the file is trusted.
+
+Temp Profile Fixer is built for the .NET Framework 4 runtime. Supported Windows
+10/11 and current Windows Server builds normally include it. Older or stripped
+down systems may need .NET Framework 4.x Full installed or enabled first.
 
 ## Validation
 

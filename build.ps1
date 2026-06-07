@@ -36,6 +36,8 @@ else {
 }
 $source = Join-Path $repoRoot 'src\TempProfileFixer.App.cs'
 $manifest = Join-Path $repoRoot 'TempProfileFixer.exe.manifest'
+$appConfig = Join-Path $repoRoot 'TempProfileFixer.exe.config'
+$launcher = Join-Path $repoRoot 'TempProfileFixer.cmd'
 $icon = Join-Path $repoRoot 'assets\TempProfileFixer.ico'
 $png = Join-Path $repoRoot 'assets\TempProfileFixer.png'
 
@@ -75,6 +77,8 @@ $commandLineReadme = Join-Path $repoRoot 'COMMAND-LINE.md'
 if ((Split-Path -Parent $outFile) -eq $dist) {
     Copy-Item -LiteralPath $readme -Destination (Join-Path $dist 'README.md') -Force
     Copy-Item -LiteralPath $commandLineReadme -Destination (Join-Path $dist 'COMMAND-LINE.md') -Force
+    Copy-Item -LiteralPath $appConfig -Destination (Join-Path $dist 'TempProfileFixer.exe.config') -Force
+    Copy-Item -LiteralPath $launcher -Destination (Join-Path $dist 'TempProfileFixer.cmd') -Force
 }
 
 Write-Host "Built $outFile"

@@ -84,6 +84,9 @@ if (($doctorOutput -join "`n") -notmatch 'compatibility diagnostics') {
 if (($doctorOutput -join "`n") -notmatch 'ProfileList registry') {
     throw 'doctor command did not check ProfileList registry access.'
 }
+if (($doctorOutput -join "`n") -match 'C:Users') {
+    throw 'doctor command used a drive-relative C:Users path instead of C:\Users.'
+}
 
 $dryRunOutput = & $exe dry-run --path $env:USERPROFILE 2>&1
 if ($LASTEXITCODE -ne 0) {
@@ -103,6 +106,13 @@ if ($LASTEXITCODE -ne 0) {
 }
 if (($profileDryRunOutput -join "`n") -notmatch 'Blocked') {
     throw 'dry-run by profile name for the current profile should be blocked.'
+}
+
+foreach ($packagedFile in @('README.md', 'COMMAND-LINE.md', 'TempProfileFixer.exe.config', 'TempProfileFixer.cmd')) {
+    $packagedPath = Join-Path $repoRoot (Join-Path 'dist' $packagedFile)
+    if (-not (Test-Path -LiteralPath $packagedPath)) {
+        throw "Expected packaged file is missing: $packagedPath"
+    }
 }
 
 Write-Host 'Smoke tests passed.'
