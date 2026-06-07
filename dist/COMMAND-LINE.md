@@ -11,6 +11,8 @@ For the most reliable transfer to another computer, use
 `TempProfileFixer-portable.zip` from the `dist` folder. Extract the ZIP locally
 and run `Run-Diagnostics.cmd` before rebuilding a profile. That helper keeps the
 window open so the diagnostics output can be read after a double-click launch.
+If Windows blocks the extracted files, run `Unblock-Package.cmd` only after
+confirming the ZIP came from the trusted GitHub release.
 
 ## Profile selection
 
@@ -197,6 +199,8 @@ Temp folder.
 
 If Windows blocks a downloaded EXE, open the file properties and use `Unblock`,
 or run it from an elevated PowerShell prompt after confirming the file is trusted.
+From the portable ZIP, `Unblock-Package.cmd` performs the same unblock operation
+for the tool files in that extracted folder after an explicit trust prompt.
 
 Temp Profile Fixer targets the .NET Framework 4 runtime. Older or stripped-down
 Windows systems may need .NET Framework 4.x Full installed or enabled before the

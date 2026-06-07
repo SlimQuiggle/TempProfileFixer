@@ -6,6 +6,8 @@ echo Temp Profile Fixer diagnostics
 echo ==============================
 echo.
 echo This check does not rename profiles, delete folders, or delete registry keys.
+echo If Windows says the downloaded files are blocked, run Unblock-Package.cmd
+echo only after confirming this package came from the trusted GitHub release.
 echo.
 
 call "%~dp0TempProfileFixer.cmd" doctor
