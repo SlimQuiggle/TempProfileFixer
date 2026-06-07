@@ -19,6 +19,13 @@ should sign in after the next reboot so Windows creates a fresh profile.
 The EXE uses an elevation manifest, so Windows prompts for administrator rights
 when it starts.
 
+If the app fails to open or fails on a specific workstation, run the
+non-destructive diagnostics command from an elevated prompt:
+
+```powershell
+.\dist\TempProfileFixer.exe doctor
+```
+
 ## Build
 
 Build the standalone executable with the .NET Framework compiler included with
@@ -75,6 +82,12 @@ List detected local profile folders and matched SIDs:
 
 ```powershell
 .\dist\TempProfileFixer.exe list
+```
+
+Run compatibility diagnostics without changing profiles or registry keys:
+
+```powershell
+.\dist\TempProfileFixer.exe doctor
 ```
 
 Preview the exact rename and registry actions for a profile folder:
@@ -134,6 +147,7 @@ have admin rights on the target, and the target must allow those remote admin
 access paths.
 
 ```powershell
+.\dist\TempProfileFixer.exe doctor --computer PC-1234
 .\dist\TempProfileFixer.exe list --computer PC-1234
 .\dist\TempProfileFixer.exe dry-run --computer PC-1234 --profile SomeUser
 .\dist\TempProfileFixer.exe rebuild --computer PC-1234 --profile SomeUser --yes --reboot
@@ -181,8 +195,34 @@ logs\<timestamp>-<profile-folder>.log
 Delete-profile runs write registry backups under `backups\<timestamp>-<profile-folder>-delete\`
 and logs under `logs\<timestamp>-<profile-folder>-delete.log`.
 
+The tool writes under the first writable data folder it can use. It tries the
+EXE folder first, then `C:\ProgramData\TempProfileFixer`, then the current user's
+Temp folder. This avoids failures when the EXE is launched from a read-only share
+or restricted folder.
+
 The old profile folder is preserved as `C:\Users\<name>.old<yyyyMMdd-HHmmss>`.
 If that path already exists, a numeric suffix is added.
+
+## Troubleshooting
+
+Run diagnostics first:
+
+```powershell
+.\dist\TempProfileFixer.exe doctor
+```
+
+The diagnostic report checks:
+
+- administrator elevation
+- readable `C:\Users` or remote users root
+- readable `HKLM\...\ProfileList`
+- `Win32_UserProfile` WMI access
+- `reg.exe` and `shutdown.exe`
+- writable backup/log storage
+
+If the EXE was downloaded from GitHub and Windows blocks it, open the file
+properties and use `Unblock`, or run it from an elevated PowerShell prompt after
+confirming the file is trusted.
 
 ## Validation
 

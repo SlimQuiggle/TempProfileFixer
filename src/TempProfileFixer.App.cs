@@ -20,6 +20,15 @@ namespace TempProfileFixer
         [STAThread]
         private static int Main(string[] args)
         {
+            AppDomain.CurrentDomain.UnhandledException += delegate(object sender, UnhandledExceptionEventArgs e)
+            {
+                Exception exception = e.ExceptionObject as Exception;
+                if (exception != null)
+                {
+                    AppDiagnostics.LogException("Unhandled application exception", exception);
+                }
+            };
+
             try
             {
                 if (args.Length > 0)
@@ -28,6 +37,21 @@ namespace TempProfileFixer
                 }
 
                 NativeMethods.FreeConsole();
+                if (!ProfileService.IsAdministrator())
+                {
+                    if (TryRelaunchElevated(args))
+                    {
+                        return 0;
+                    }
+
+                    MessageBox.Show("Temp Profile Fixer must be run as administrator.", "Temp Profile Fixer", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return 1;
+                }
+
+                Application.ThreadException += delegate(object sender, System.Threading.ThreadExceptionEventArgs e)
+                {
+                    ShowGuiException(e.Exception);
+                };
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
                 Application.Run(new MainForm());
@@ -35,17 +59,78 @@ namespace TempProfileFixer
             }
             catch (Exception ex)
             {
+                string logPath = AppDiagnostics.LogException("Startup failure", ex);
                 if (args.Length > 0)
                 {
                     Console.Error.WriteLine(ex.Message);
+                    Console.Error.WriteLine("Diagnostic log: " + logPath);
+                    if (args.Any(a => String.Equals(a, "--verbose", StringComparison.OrdinalIgnoreCase) || String.Equals(a, "--debug", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        Console.Error.WriteLine(ex.ToString());
+                    }
                 }
                 else
                 {
-                    MessageBox.Show(ex.Message, "Temp Profile Fixer", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(ex.Message + Environment.NewLine + Environment.NewLine + "Diagnostic log: " + logPath, "Temp Profile Fixer", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
 
                 return 1;
             }
+        }
+
+        private static void ShowGuiException(Exception ex)
+        {
+            string logPath = AppDiagnostics.LogException("User interface error", ex);
+            MessageBox.Show(
+                ex.Message + Environment.NewLine + Environment.NewLine + "Diagnostic log: " + logPath,
+                "Temp Profile Fixer",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+
+        private static bool TryRelaunchElevated(string[] args)
+        {
+            try
+            {
+                ProcessStartInfo startInfo = new ProcessStartInfo();
+                startInfo.FileName = Application.ExecutablePath;
+                startInfo.WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory;
+                startInfo.UseShellExecute = true;
+                startInfo.Verb = "runas";
+                startInfo.Arguments = JoinArguments(args);
+                Process.Start(startInfo);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                AppDiagnostics.LogException("Elevation relaunch failed", ex);
+                return false;
+            }
+        }
+
+        private static string JoinArguments(string[] args)
+        {
+            if (args == null || args.Length == 0)
+            {
+                return String.Empty;
+            }
+
+            return String.Join(" ", args.Select(QuoteArgument).ToArray());
+        }
+
+        private static string QuoteArgument(string value)
+        {
+            if (String.IsNullOrEmpty(value))
+            {
+                return "\"\"";
+            }
+
+            if (value.IndexOfAny(new[] { ' ', '\t', '"' }) < 0)
+            {
+                return value;
+            }
+
+            return "\"" + value.Replace("\"", "\\\"") + "\"";
         }
     }
 
@@ -53,6 +138,88 @@ namespace TempProfileFixer
     {
         [DllImport("kernel32.dll")]
         public static extern bool FreeConsole();
+    }
+
+    internal static class AppDiagnostics
+    {
+        public static string GetDataDirectory()
+        {
+            List<string> candidates = new List<string>();
+            string baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
+            if (!String.IsNullOrWhiteSpace(baseDirectory))
+            {
+                candidates.Add(baseDirectory);
+            }
+
+            string commonAppData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+            if (!String.IsNullOrWhiteSpace(commonAppData))
+            {
+                candidates.Add(Path.Combine(commonAppData, "TempProfileFixer"));
+            }
+
+            candidates.Add(Path.Combine(Path.GetTempPath(), "TempProfileFixer"));
+
+            foreach (string candidate in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (TryEnsureWritableDirectory(candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            return Path.GetTempPath();
+        }
+
+        public static string GetLogDirectory()
+        {
+            string logDirectory = Path.Combine(GetDataDirectory(), "logs");
+            Directory.CreateDirectory(logDirectory);
+            return logDirectory;
+        }
+
+        public static string LogException(string context, Exception ex)
+        {
+            try
+            {
+                string logDirectory = GetLogDirectory();
+                string logPath = Path.Combine(logDirectory, "diagnostic-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".log");
+                StringBuilder builder = new StringBuilder();
+                builder.AppendLine("Temp Profile Fixer diagnostic log");
+                builder.AppendLine("Context: " + context);
+                builder.AppendLine("Timestamp: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+                builder.AppendLine("Machine: " + Environment.MachineName);
+                builder.AppendLine("User: " + Environment.UserDomainName + "\\" + Environment.UserName);
+                builder.AppendLine("OS: " + Environment.OSVersion.VersionString);
+                builder.AppendLine(".NET: " + Environment.Version);
+                builder.AppendLine("64-bit OS: " + Environment.Is64BitOperatingSystem);
+                builder.AppendLine("64-bit process: " + Environment.Is64BitProcess);
+                builder.AppendLine("Executable: " + Application.ExecutablePath);
+                builder.AppendLine();
+                builder.AppendLine(ex.ToString());
+                File.WriteAllText(logPath, builder.ToString(), Encoding.UTF8);
+                return logPath;
+            }
+            catch
+            {
+                return "(failed to write diagnostic log)";
+            }
+        }
+
+        public static bool TryEnsureWritableDirectory(string directoryPath)
+        {
+            try
+            {
+                Directory.CreateDirectory(directoryPath);
+                string probe = Path.Combine(directoryPath, ".write-test-" + Guid.NewGuid().ToString("N") + ".tmp");
+                File.WriteAllText(probe, "test");
+                File.Delete(probe);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
     }
 
     internal static class CommandLine
@@ -73,6 +240,18 @@ namespace TempProfileFixer
             {
                 ListProfiles(target);
                 return 0;
+            }
+
+            if (command == "doctor" || command == "diagnostics" || command == "check")
+            {
+                CompatibilityReport report = ProfileService.RunDiagnostics(target);
+                Console.WriteLine(report.ToDisplayText());
+                return report.HasFailures ? 1 : 0;
+            }
+
+            if (RequiresAdministrator(command) && !ProfileService.IsAdministrator())
+            {
+                throw new InvalidOperationException("This command must be run from an elevated administrator prompt.");
             }
 
             if (command == "dry-run" || command == "plan")
@@ -264,6 +443,7 @@ namespace TempProfileFixer
             Console.WriteLine();
             Console.WriteLine("Commands:");
             Console.WriteLine("  TempProfileFixer.exe list [--computer PCNAME] [--users-root C:\\Users]");
+            Console.WriteLine("  TempProfileFixer.exe doctor [--computer PCNAME] [--users-root C:\\Users]");
             Console.WriteLine("  TempProfileFixer.exe dry-run (--profile SomeUser | --path C:\\Users\\SomeUser | --sid S-1-...) [--computer PCNAME]");
             Console.WriteLine("  TempProfileFixer.exe rebuild (--profile SomeUser | --path C:\\Users\\SomeUser | --sid S-1-...) [--computer PCNAME] [--yes] [--reboot] [--no-reboot-prompt]");
             Console.WriteLine("  TempProfileFixer.exe delete-profile (--profile SomeUser | --path C:\\Users\\SomeUser | --sid S-1-...) [--computer PCNAME] [--yes]");
@@ -278,6 +458,19 @@ namespace TempProfileFixer
             Console.WriteLine();
             Console.WriteLine("rebuild renames the profile folder to .old<date>, exports/deletes the matching normal SID key");
             Console.WriteLine("and matching .bak key, then prompts for reboot.");
+        }
+
+        private static bool RequiresAdministrator(string command)
+        {
+            return command == "rebuild" ||
+                command == "rebuild-profile" ||
+                command == "remove-registry" ||
+                command == "remove-reg" ||
+                command == "delete-registry" ||
+                command == "delete-profile" ||
+                command == "delete" ||
+                command == "remove-bak" ||
+                command == "fix-bak";
         }
     }
 
@@ -638,26 +831,7 @@ namespace TempProfileFixer
             }
             headerImage = ProfileService.LoadHeaderImage();
 
-            trayIcon = new NotifyIcon();
-            trayIcon.Text = "Temp Profile Fixer";
-            trayIcon.Icon = appIcon ?? SystemIcons.Application;
-            trayIcon.Visible = true;
-            trayIcon.DoubleClick += delegate
-            {
-                Show();
-                WindowState = FormWindowState.Normal;
-                Activate();
-            };
-            ContextMenuStrip trayMenu = new ContextMenuStrip();
-            trayMenu.Items.Add("Show", null, delegate
-            {
-                Show();
-                WindowState = FormWindowState.Normal;
-                Activate();
-            });
-            trayMenu.Items.Add("Refresh", null, delegate { RefreshProfiles(); });
-            trayMenu.Items.Add("Exit", null, delegate { Close(); });
-            trayIcon.ContextMenuStrip = trayMenu;
+            trayIcon = CreateTrayIcon();
 
             MenuStrip menuStrip = new MenuStrip();
             menuStrip.Dock = DockStyle.Top;
@@ -810,8 +984,11 @@ namespace TempProfileFixer
             Shown += delegate { RefreshProfiles(); };
             FormClosed += delegate
             {
-                trayIcon.Visible = false;
-                trayIcon.Dispose();
+                if (trayIcon != null)
+                {
+                    trayIcon.Visible = false;
+                    trayIcon.Dispose();
+                }
                 if (appIcon != null)
                 {
                     appIcon.Dispose();
@@ -821,6 +998,39 @@ namespace TempProfileFixer
                     headerImage.Dispose();
                 }
             };
+        }
+
+        private NotifyIcon CreateTrayIcon()
+        {
+            try
+            {
+                NotifyIcon notifyIcon = new NotifyIcon();
+                notifyIcon.Text = "Temp Profile Fixer";
+                notifyIcon.Icon = appIcon ?? SystemIcons.Application;
+                notifyIcon.Visible = true;
+                notifyIcon.DoubleClick += delegate
+                {
+                    Show();
+                    WindowState = FormWindowState.Normal;
+                    Activate();
+                };
+                ContextMenuStrip trayMenu = new ContextMenuStrip();
+                trayMenu.Items.Add("Show", null, delegate
+                {
+                    Show();
+                    WindowState = FormWindowState.Normal;
+                    Activate();
+                });
+                trayMenu.Items.Add("Refresh", null, delegate { RefreshProfiles(); });
+                trayMenu.Items.Add("Exit", null, delegate { Close(); });
+                notifyIcon.ContextMenuStrip = trayMenu;
+                return notifyIcon;
+            }
+            catch (Exception ex)
+            {
+                AppDiagnostics.LogException("Tray icon initialization failed", ex);
+                return null;
+            }
         }
 
         private void ShowHelpDialog()
@@ -951,7 +1161,9 @@ namespace TempProfileFixer
             AppendHeading(box, "Why reboot after a rebuild?");
             AppendParagraph(box, "The reboot clears the workflow before the target user's next real sign-in. After restart, Windows can create and load a clean profile using fresh ProfileList state.");
             AppendHeading(box, "Where are backups and logs?");
-            AppendParagraph(box, "Backups and logs are written next to the EXE under backups\\ and logs\\.");
+            AppendParagraph(box, "Backups and logs are written under backups\\ and logs\\ in the first writable data folder. The tool tries the EXE folder first, then ProgramData\\TempProfileFixer, then the user's Temp folder.");
+            AppendHeading(box, "What should I run if the tool fails on a computer?");
+            AppendParagraph(box, "Run TempProfileFixer.exe doctor from an elevated prompt on that computer. The diagnostics output checks elevation, users root access, ProfileList registry access, WMI profile state, helper tools, and writable log storage.");
         }
 
         private static void AddCommandLineHelpTab(TabControl tabs)
@@ -959,10 +1171,12 @@ namespace TempProfileFixer
             RichTextBox box = AddHelpTab(tabs, "Command line");
             AppendHeading(box, "Local examples");
             AppendCode(box, "TempProfileFixer.exe list");
+            AppendCode(box, "TempProfileFixer.exe doctor");
             AppendCode(box, "TempProfileFixer.exe dry-run --profile jsmith");
             AppendCode(box, "TempProfileFixer.exe rebuild --profile jsmith --yes --reboot");
             AppendHeading(box, "Remote examples");
             AppendParagraph(box, "Use --computer when the admin share and Remote Registry/WMI access are available for the target workstation.");
+            AppendCode(box, "TempProfileFixer.exe doctor --computer PC-1234");
             AppendCode(box, "TempProfileFixer.exe list --computer PC-1234");
             AppendCode(box, "TempProfileFixer.exe dry-run --computer PC-1234 --profile jsmith");
             AppendCode(box, "TempProfileFixer.exe rebuild --computer PC-1234 --profile jsmith --yes --reboot");
@@ -1375,6 +1589,94 @@ namespace TempProfileFixer
             return BuildInventory(folders, entries, states, currentSid, stateError, target.RegistryPath);
         }
 
+        public static CompatibilityReport RunDiagnostics(ProfileTarget target)
+        {
+            if (target == null)
+            {
+                throw new ArgumentNullException("target");
+            }
+
+            CompatibilityReport report = new CompatibilityReport { Target = target.DisplayName };
+            report.AddOk("Executable", Application.ExecutablePath);
+            report.AddOk("Operating system", Environment.OSVersion.VersionString);
+            report.AddOk(".NET runtime", Environment.Version.ToString());
+            report.AddOk("Process architecture", (Environment.Is64BitProcess ? "64-bit process" : "32-bit process") + " on " + (Environment.Is64BitOperatingSystem ? "64-bit Windows" : "32-bit Windows"));
+
+            if (IsAdministrator())
+            {
+                report.AddOk("Administrator", "Running elevated.");
+            }
+            else
+            {
+                report.AddFailure("Administrator", "Not elevated. Run TempProfileFixer.exe as administrator.");
+            }
+
+            string dataDirectory = AppDiagnostics.GetDataDirectory();
+            if (AppDiagnostics.TryEnsureWritableDirectory(dataDirectory))
+            {
+                report.AddOk("Writable data folder", dataDirectory);
+            }
+            else
+            {
+                report.AddFailure("Writable data folder", "Could not write to " + dataDirectory + ".");
+            }
+
+            CheckFileExists(report, "reg.exe", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "reg.exe"));
+            CheckFileExists(report, "shutdown.exe", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "shutdown.exe"));
+
+            try
+            {
+                if (!Directory.Exists(target.UsersRoot))
+                {
+                    report.AddFailure("Users root", target.UsersRoot + " was not found.");
+                }
+                else
+                {
+                    int folderCount = new DirectoryInfo(target.UsersRoot).GetDirectories().Length;
+                    report.AddOk("Users root", target.UsersRoot + " exists; " + folderCount + " folder(s) found.");
+                }
+            }
+            catch (Exception ex)
+            {
+                report.AddFailure("Users root", ex.Message);
+            }
+
+            try
+            {
+                List<ProfileListEntry> entries = GetProfileListEntries(target.ComputerName);
+                report.AddOk("ProfileList registry", target.RegistryPath + " readable; " + entries.Count + " key(s) found.");
+            }
+            catch (Exception ex)
+            {
+                report.AddFailure("ProfileList registry", ex.Message);
+            }
+
+            try
+            {
+                string stateError;
+                List<UserProfileState> states = GetUserProfileStates(target.ComputerName, out stateError);
+                if (String.IsNullOrWhiteSpace(stateError))
+                {
+                    report.AddOk("Win32_UserProfile", states.Count + " profile state record(s) found.");
+                }
+                else
+                {
+                    report.AddFailure("Win32_UserProfile", stateError);
+                }
+            }
+            catch (Exception ex)
+            {
+                report.AddFailure("Win32_UserProfile", ex.Message);
+            }
+
+            if (target.IsRemote)
+            {
+                report.AddOk("Remote target", "Using " + target.UsersRoot + " and " + target.RegistryPath + ".");
+            }
+
+            return report;
+        }
+
         public static ProfileRecord FindProfileByPath(string path, string usersRoot)
         {
             return FindProfileByPath(path, ProfileTarget.Local(usersRoot));
@@ -1762,13 +2064,20 @@ namespace TempProfileFixer
 
         public static Image LoadHeaderImage()
         {
-            Assembly assembly = Assembly.GetExecutingAssembly();
-            using (Stream stream = assembly.GetManifestResourceStream("TempProfileFixer.Assets.TempProfileFixer.png"))
+            try
             {
-                if (stream != null)
+                Assembly assembly = Assembly.GetExecutingAssembly();
+                using (Stream stream = assembly.GetManifestResourceStream("TempProfileFixer.Assets.TempProfileFixer.png"))
                 {
-                    return Image.FromStream(stream);
+                    if (stream != null)
+                    {
+                        return Image.FromStream(stream);
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                AppDiagnostics.LogException("Header image load failed", ex);
             }
 
             using (Icon icon = LoadApplicationIcon())
@@ -1862,6 +2171,18 @@ namespace TempProfileFixer
             return !String.Equals(normalized, ".", StringComparison.OrdinalIgnoreCase) &&
                 !String.Equals(normalized, "localhost", StringComparison.OrdinalIgnoreCase) &&
                 !String.Equals(normalized, Environment.MachineName, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void CheckFileExists(CompatibilityReport report, string name, string path)
+        {
+            if (File.Exists(path))
+            {
+                report.AddOk(name, path);
+            }
+            else
+            {
+                report.AddFailure(name, path + " was not found.");
+            }
         }
 
         private static List<FolderRecord> GetProfileFolders(ProfileTarget target)
@@ -2207,8 +2528,7 @@ namespace TempProfileFixer
 
         private static string GetAppDirectory()
         {
-            string baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
-            return String.IsNullOrWhiteSpace(baseDirectory) ? Environment.CurrentDirectory : baseDirectory;
+            return AppDiagnostics.GetDataDirectory();
         }
 
         private static string SafeFileName(string value)
@@ -2267,6 +2587,61 @@ namespace TempProfileFixer
         public string NormalizedPath { get; set; }
         public bool Loaded { get; set; }
         public bool Special { get; set; }
+    }
+
+    internal sealed class CompatibilityReport
+    {
+        public string Target { get; set; }
+        public List<DiagnosticCheck> Checks { get; private set; }
+
+        public CompatibilityReport()
+        {
+            Checks = new List<DiagnosticCheck>();
+        }
+
+        public bool HasFailures
+        {
+            get { return Checks.Any(c => String.Equals(c.Status, "FAIL", StringComparison.OrdinalIgnoreCase)); }
+        }
+
+        public void AddOk(string name, string detail)
+        {
+            Checks.Add(new DiagnosticCheck { Status = "OK", Name = name, Detail = detail });
+        }
+
+        public void AddWarning(string name, string detail)
+        {
+            Checks.Add(new DiagnosticCheck { Status = "WARN", Name = name, Detail = detail });
+        }
+
+        public void AddFailure(string name, string detail)
+        {
+            Checks.Add(new DiagnosticCheck { Status = "FAIL", Name = name, Detail = detail });
+        }
+
+        public string ToDisplayText()
+        {
+            StringBuilder builder = new StringBuilder();
+            builder.AppendLine("Temp Profile Fixer compatibility diagnostics");
+            builder.AppendLine("Target: " + Target);
+            builder.AppendLine();
+            foreach (DiagnosticCheck check in Checks)
+            {
+                builder.AppendLine("[" + check.Status + "] " + check.Name + " - " + check.Detail);
+            }
+            builder.AppendLine();
+            builder.AppendLine(HasFailures
+                ? "One or more checks failed. Fix those before rebuilding a profile on this computer."
+                : "All checks passed.");
+            return builder.ToString();
+        }
+    }
+
+    internal sealed class DiagnosticCheck
+    {
+        public string Status { get; set; }
+        public string Name { get; set; }
+        public string Detail { get; set; }
     }
 
     internal sealed class ProfileRecord

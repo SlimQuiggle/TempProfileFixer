@@ -69,6 +69,21 @@ if (($helpOutput -join "`n") -notmatch '--computer') {
 if (($helpOutput -join "`n") -notmatch '--profile') {
     throw 'help command did not advertise profile-name targeting.'
 }
+if (($helpOutput -join "`n") -notmatch 'doctor') {
+    throw 'help command did not advertise diagnostics.'
+}
+
+$doctorOutput = & $exe doctor 2>&1
+$doctorExit = $LASTEXITCODE
+if ($doctorExit -ne 0 -and $doctorExit -ne 1) {
+    throw "doctor command returned an unexpected exit code ${doctorExit}: $doctorOutput"
+}
+if (($doctorOutput -join "`n") -notmatch 'compatibility diagnostics') {
+    throw 'doctor command did not print the expected diagnostics heading.'
+}
+if (($doctorOutput -join "`n") -notmatch 'ProfileList registry') {
+    throw 'doctor command did not check ProfileList registry access.'
+}
 
 $dryRunOutput = & $exe dry-run --path $env:USERPROFILE 2>&1
 if ($LASTEXITCODE -ne 0) {

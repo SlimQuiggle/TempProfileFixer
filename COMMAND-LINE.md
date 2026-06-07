@@ -25,6 +25,12 @@ List local profile folders and matched base SIDs:
 .\TempProfileFixer.exe list
 ```
 
+Run compatibility diagnostics without changing profiles or registry keys:
+
+```powershell
+.\TempProfileFixer.exe doctor
+```
+
 Preview the rebuild plan without changing anything:
 
 ```powershell
@@ -81,6 +87,12 @@ List profiles on a remote workstation:
 .\TempProfileFixer.exe list --computer PC-1234
 ```
 
+Run remote compatibility diagnostics:
+
+```powershell
+.\TempProfileFixer.exe doctor --computer PC-1234
+```
+
 Preview a remote rebuild:
 
 ```powershell
@@ -130,6 +142,7 @@ Invoke-Command -ComputerName PC-1234 -ScriptBlock {
 
 ```text
 TempProfileFixer.exe list [--computer PCNAME] [--users-root PATH] [--profile-root PATH]
+TempProfileFixer.exe doctor [--computer PCNAME] [--users-root PATH] [--profile-root PATH]
 TempProfileFixer.exe dry-run (--profile NAME | --path PATH | --sid SID) [--computer PCNAME]
 TempProfileFixer.exe rebuild (--profile NAME | --path PATH | --sid SID) [--computer PCNAME] [--yes] [--reboot] [--no-reboot-prompt]
 TempProfileFixer.exe delete-profile (--profile NAME | --path PATH | --sid SID) [--computer PCNAME] [--yes]
@@ -152,3 +165,20 @@ Useful switches:
 Rebuild and delete actions are blocked when the selected profile is current,
 loaded, special/system, missing a matching ProfileList SID, matched ambiguously,
 or loaded state cannot be verified. Registry keys are exported before deletion.
+
+## Troubleshooting startup failures
+
+Run this first on a computer where the tool fails:
+
+```powershell
+.\TempProfileFixer.exe doctor
+```
+
+The report checks elevation, users-root access, ProfileList registry access,
+WMI profile state, `reg.exe`, `shutdown.exe`, and writable data storage. Backup,
+log, and diagnostic files are written under the first writable location the tool
+can use: the EXE folder, `C:\ProgramData\TempProfileFixer`, or the current user's
+Temp folder.
+
+If Windows blocks a downloaded EXE, open the file properties and use `Unblock`,
+or run it from an elevated PowerShell prompt after confirming the file is trusted.
