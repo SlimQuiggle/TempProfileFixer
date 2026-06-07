@@ -122,6 +122,14 @@ foreach ($checksumFile in @('TempProfileFixer.exe', 'TempProfileFixer.exe.config
     }
 }
 
+$unblockText = Get-Content -LiteralPath (Join-Path $repoRoot 'dist\Unblock-Package.cmd') -Raw
+if ($unblockText -notmatch 'Unblock-File') {
+    throw 'Unblock-Package.cmd no longer tries the standard Unblock-File path.'
+}
+if ($unblockText -notmatch 'Zone\.Identifier') {
+    throw 'Unblock-Package.cmd does not include the older PowerShell Zone.Identifier fallback.'
+}
+
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zipPath = Join-Path $repoRoot 'dist\TempProfileFixer-portable.zip'
 $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)

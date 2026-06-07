@@ -1167,7 +1167,7 @@ namespace TempProfileFixer
             AppendHeading(box, "What if the EXE does not launch at all?");
             AppendParagraph(box, "Use the packaged Run-Diagnostics.cmd helper from the same folder. It checks launch prerequisites, runs doctor, and keeps the window open so the result is readable after a double-click launch.");
             AppendHeading(box, "What if Windows says the files are blocked?");
-            AppendParagraph(box, "After confirming the ZIP came from the official GitHub release, run Unblock-Package.cmd from the extracted folder. It only removes the Windows download block from the tool files in that folder.");
+            AppendParagraph(box, "After confirming the ZIP came from the official GitHub release, run Unblock-Package.cmd from the extracted folder. It only removes the Windows download block from the tool files in that folder, using Unblock-File when available and direct Zone.Identifier stream clearing on older PowerShell versions.");
         }
 
         private static void AddCommandLineHelpTab(TabControl tabs)
