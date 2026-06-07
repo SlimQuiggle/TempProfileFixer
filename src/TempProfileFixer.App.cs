@@ -1672,9 +1672,10 @@ namespace TempProfileFixer
                 registryError = ex.Message;
             }
             string stateError;
-            List<UserProfileState> states = GetUserProfileStates(target.ComputerName, out stateError);
+            string stateWarning;
+            List<UserProfileState> states = GetUserProfileStates(target.ComputerName, out stateError, out stateWarning);
             string currentSid = target.IsRemote ? String.Empty : GetCurrentSid();
-            return BuildInventory(folders, entries, states, currentSid, stateError, target.RegistryPath, registryError);
+            return BuildInventory(folders, entries, states, currentSid, stateError, stateWarning, target.RegistryPath, registryError);
         }
 
         public static CompatibilityReport RunDiagnostics(ProfileTarget target)
@@ -1752,10 +1753,18 @@ namespace TempProfileFixer
             try
             {
                 string stateError;
-                List<UserProfileState> states = GetUserProfileStates(target.ComputerName, out stateError);
+                string stateWarning;
+                List<UserProfileState> states = GetUserProfileStates(target.ComputerName, out stateError, out stateWarning);
                 if (String.IsNullOrWhiteSpace(stateError))
                 {
-                    report.AddOk("Win32_UserProfile", states.Count + " profile state record(s) found.");
+                    if (String.IsNullOrWhiteSpace(stateWarning))
+                    {
+                        report.AddOk("Win32_UserProfile", states.Count + " profile state record(s) found.");
+                    }
+                    else
+                    {
+                        report.AddWarning("Win32_UserProfile", states.Count + " profile state record(s) read. " + stateWarning);
+                    }
                 }
                 else
                 {
@@ -2411,8 +2420,16 @@ namespace TempProfileFixer
 
         private static List<UserProfileState> GetUserProfileStates(string computerName, out string error)
         {
+            string warning;
+            return GetUserProfileStates(computerName, out error, out warning);
+        }
+
+        private static List<UserProfileState> GetUserProfileStates(string computerName, out string error, out string warning)
+        {
             List<UserProfileState> states = new List<UserProfileState>();
+            List<string> skippedRows = new List<string>();
             error = null;
+            warning = null;
 
             try
             {
@@ -2432,18 +2449,30 @@ namespace TempProfileFixer
                 using (searcher)
                 using (ManagementObjectCollection results = searcher.Get())
                 {
+                    int rowNumber = 0;
                     foreach (ManagementObject profile in results)
                     {
-                        string sid = Convert.ToString(profile["SID"]);
-                        string localPath = Convert.ToString(profile["LocalPath"]);
-                        states.Add(new UserProfileState
+                        rowNumber++;
+                        using (profile)
                         {
-                            Sid = sid,
-                            LocalPath = localPath,
-                            NormalizedPath = NormalizePath(localPath),
-                            Loaded = Convert.ToBoolean(profile["Loaded"]),
-                            Special = Convert.ToBoolean(profile["Special"])
-                        });
+                            try
+                            {
+                                string sid = Convert.ToString(profile["SID"]);
+                                string localPath = Convert.ToString(profile["LocalPath"]);
+                                states.Add(new UserProfileState
+                                {
+                                    Sid = sid,
+                                    LocalPath = localPath,
+                                    NormalizedPath = NormalizePath(localPath),
+                                    Loaded = Convert.ToBoolean(profile["Loaded"]),
+                                    Special = Convert.ToBoolean(profile["Special"])
+                                });
+                            }
+                            catch (Exception ex)
+                            {
+                                skippedRows.Add(DescribeUserProfileRow(profile, rowNumber) + " (" + ex.Message + ")");
+                            }
+                        }
                     }
                 }
             }
@@ -2452,7 +2481,41 @@ namespace TempProfileFixer
                 error = ex.Message;
             }
 
+            if (skippedRows.Count > 0)
+            {
+                warning = "Skipped unreadable Win32_UserProfile row(s): " + String.Join("; ", skippedRows.ToArray());
+            }
+
             return states;
+        }
+
+        private static string DescribeUserProfileRow(ManagementObject profile, int rowNumber)
+        {
+            string sid = TryGetManagementString(profile, "SID");
+            if (!String.IsNullOrWhiteSpace(sid))
+            {
+                return sid;
+            }
+
+            string localPath = TryGetManagementString(profile, "LocalPath");
+            if (!String.IsNullOrWhiteSpace(localPath))
+            {
+                return localPath;
+            }
+
+            return "row " + rowNumber;
+        }
+
+        private static string TryGetManagementString(ManagementBaseObject instance, string propertyName)
+        {
+            try
+            {
+                return Convert.ToString(instance[propertyName]);
+            }
+            catch
+            {
+                return String.Empty;
+            }
         }
 
         private static List<ProfileRecord> BuildInventory(
@@ -2461,6 +2524,7 @@ namespace TempProfileFixer
             List<UserProfileState> states,
             string currentSid,
             string stateError,
+            string stateWarning,
             string registryRoot,
             string registryError)
         {
@@ -2548,6 +2612,10 @@ namespace TempProfileFixer
                 {
                     blockReasons.Add("Could not verify loaded profile state");
                     warnings.Add("Win32_UserProfile query failed: " + stateError);
+                }
+                if (!String.IsNullOrWhiteSpace(stateWarning))
+                {
+                    warnings.Add("Win32_UserProfile query warning: " + stateWarning);
                 }
                 if (bakEntries.Count > 0)
                 {

@@ -31,6 +31,15 @@ if ($sourceText -notmatch 'Skipped unreadable ProfileList key') {
 if ($sourceText -notmatch 'AddWarning\("ProfileList registry"') {
     throw 'Diagnostics should report partial ProfileList registry reads as warnings.'
 }
+if ($sourceText -notmatch 'Skipped unreadable Win32_UserProfile row') {
+    throw 'Win32_UserProfile enumeration should report skipped unreadable rows instead of failing the whole state scan.'
+}
+if ($sourceText -notmatch 'AddWarning\("Win32_UserProfile"') {
+    throw 'Diagnostics should report partial Win32_UserProfile reads as warnings.'
+}
+if ($sourceText -notmatch 'Win32_UserProfile query warning') {
+    throw 'Profile inventory should surface partial Win32_UserProfile warnings.'
+}
 $runMethodStart = $sourceText.IndexOf('public static int Run(string[] args)', [StringComparison]::Ordinal)
 $helpCommandIndex = $sourceText.IndexOf('IsHelpCommand(command)', $runMethodStart, [StringComparison]::Ordinal)
 $parseArgsIndex = $sourceText.IndexOf('ParsedArgs.Parse', $runMethodStart, [StringComparison]::Ordinal)

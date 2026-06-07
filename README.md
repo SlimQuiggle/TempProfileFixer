@@ -135,7 +135,10 @@ Run compatibility diagnostics without changing profiles or registry keys:
 ```
 
 `doctor` exits nonzero for failures or warnings so remote tools can detect a
-machine that needs attention before a rebuild.
+machine that needs attention before a rebuild. A full `Win32_UserProfile` WMI
+failure blocks profile actions because loaded state cannot be verified. A small
+number of unreadable WMI rows is reported as a warning so the rest of the
+inventory can still load and show the affected machine state.
 
 Preview the exact rename and registry actions for a profile folder:
 
@@ -266,7 +269,7 @@ The diagnostic report checks:
 - readable `C:\Users` or remote users root
 - readable `HKLM\...\ProfileList`
 - skipped or unreadable `ProfileList` subkeys
-- `Win32_UserProfile` WMI access
+- `Win32_UserProfile` WMI access, including skipped or unreadable rows
 - `reg.exe` and `shutdown.exe`
 - writable backup/log storage
 

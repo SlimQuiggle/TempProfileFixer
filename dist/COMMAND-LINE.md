@@ -53,7 +53,10 @@ Run compatibility diagnostics without changing profiles or registry keys:
 ```
 
 `doctor` exits nonzero for failures or warnings so remote tools can detect a
-machine that needs attention before a rebuild.
+machine that needs attention before a rebuild. A full `Win32_UserProfile` WMI
+failure blocks profile actions because loaded state cannot be verified. A small
+number of unreadable WMI rows is reported as a warning so the rest of the
+inventory can still load and show the affected machine state.
 
 Preview the rebuild plan without changing anything:
 
@@ -209,9 +212,9 @@ For an interactive double-click check, run:
 
 The report checks elevation, configured users/profile roots, users-root access,
 ProfileList registry access, skipped or unreadable ProfileList subkeys, WMI
-profile state, `reg.exe`, `shutdown.exe`, and writable data storage. Backup,
-log, and diagnostic files are written under the first writable location the tool
-can use: the EXE folder,
+profile state, skipped or unreadable WMI rows, `reg.exe`, `shutdown.exe`, and
+writable data storage. Backup, log, and diagnostic files are written under the
+first writable location the tool can use: the EXE folder,
 `C:\ProgramData\TempProfileFixer`, or the current user's Temp folder.
 
 If Windows blocks a downloaded EXE, open the file properties and use `Unblock`,
