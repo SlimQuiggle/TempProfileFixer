@@ -1196,7 +1196,7 @@ namespace TempProfileFixer
             AppendHeading(box, "Where are backups and logs?");
             AppendParagraph(box, "Backups and logs are written under backups\\ and logs\\ in the first writable data folder. The tool tries the EXE folder first, then ProgramData\\TempProfileFixer, then the user's Temp folder.");
             AppendHeading(box, "What should I run if the tool fails on a computer?");
-            AppendParagraph(box, "Run TempProfileFixer.exe doctor from an elevated prompt on that computer. The diagnostics output checks elevation, users root access, ProfileList registry access, WMI profile state, helper tools, and writable log storage.");
+            AppendParagraph(box, "Run TempProfileFixer.exe doctor on that computer. Elevated diagnostics are most complete, but doctor can also run unelevated so startup and prerequisite failures are visible. The diagnostics output checks elevation, users root access, ProfileList registry access, WMI profile state, helper tools, and writable log storage.");
             AppendHeading(box, "What if the EXE does not launch at all?");
             AppendParagraph(box, "Use the packaged Run-Diagnostics.cmd helper from the same folder. It checks launch prerequisites, runs doctor, and keeps the window open so the result is readable after a double-click launch.");
             AppendHeading(box, "What if Windows says the files are blocked?");

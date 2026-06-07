@@ -1,7 +1,10 @@
 # Temp Profile Fixer Command Line
 
-Run `TempProfileFixer.exe` from an elevated command prompt. The GUI is opened
-only when no command is supplied.
+Run `TempProfileFixer.exe` from a command prompt. The GUI is opened only when no
+command is supplied and will request administrator rights when needed. Rebuild,
+delete, and registry-removal commands must be run from an elevated administrator
+prompt. Help, list, diagnostics, and dry-run modes are non-destructive and can
+run without pre-elevation.
 
 If the EXE will not launch on a workstation, run `TempProfileFixer.cmd` from the
 same folder. It checks for Microsoft .NET Framework 4.x Full and then starts the
@@ -184,7 +187,9 @@ or loaded state cannot be verified. Registry keys are exported before deletion.
 
 ## Troubleshooting startup failures
 
-Run this first on a computer where the tool fails:
+Run this first on a computer where the tool fails. Elevated diagnostics are most
+complete, but the command can also run unelevated so prerequisite failures are
+visible instead of being hidden behind startup elevation:
 
 ```powershell
 .\TempProfileFixer.exe doctor

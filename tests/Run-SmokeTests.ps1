@@ -16,6 +16,14 @@ if (-not (Test-Path -LiteralPath $exe)) {
     throw "Expected EXE was not built: $exe"
 }
 
+$manifestText = Get-Content -LiteralPath (Join-Path $repoRoot 'TempProfileFixer.exe.manifest') -Raw
+if ($manifestText -notmatch 'requestedExecutionLevel level="asInvoker"') {
+    throw 'The application manifest must allow non-destructive diagnostics to start without pre-elevation.'
+}
+if ($manifestText -match 'requireAdministrator') {
+    throw 'The application manifest should not require UAC before help or diagnostics can run.'
+}
+
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).
     IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 

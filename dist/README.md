@@ -18,11 +18,15 @@ profile folder to `.old<date>`, then removes the matching normal SID key and any
 matching `.bak` key. After the rebuild it asks whether to reboot. The target user
 should sign in after the next reboot so Windows creates a fresh profile.
 
-The EXE uses an elevation manifest, so Windows prompts for administrator rights
-when it starts.
+Opening the GUI still prompts for administrator rights when needed. Command-line
+diagnostics, help, listing, and dry-run modes can start without elevation so a
+failed workstation can print useful troubleshooting output. Rebuild, delete, and
+registry-removal commands require an elevated administrator prompt.
 
 If the app fails to open or fails on a specific workstation, run the
-non-destructive diagnostics command from an elevated prompt:
+non-destructive diagnostics command first. Running it elevated gives the most
+complete result, but it can also run unelevated to show startup and prerequisite
+checks:
 
 ```powershell
 .\dist\TempProfileFixer.exe doctor
@@ -109,8 +113,10 @@ blocked-profile safety checks as rebuild and greys out for locked profiles.
 
 ## Command line
 
-Run these commands from an elevated prompt. You can select a profile by
-`--profile`, `--path`, or `--sid`.
+You can select a profile by `--profile`, `--path`, or `--sid`. Rebuild, delete,
+and registry-removal commands must be run from an elevated administrator prompt.
+Help, list, diagnostics, and dry-run modes are non-destructive and can run
+without pre-elevation.
 
 List detected local profile folders and matched SIDs:
 
