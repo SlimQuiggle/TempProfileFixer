@@ -227,14 +227,21 @@ namespace TempProfileFixer
         public static int Run(string[] args)
         {
             string command = args[0].Trim().ToLowerInvariant();
-            ParsedArgs parsed = ParsedArgs.Parse(args.Skip(1).ToArray());
-            ProfileTarget target = ProfileTarget.FromParsedArgs(parsed);
 
-            if (command == "help" || command == "--help" || command == "-h" || command == "/?")
+            if (IsHelpCommand(command))
             {
                 PrintUsage();
                 return 0;
             }
+
+            if (!IsKnownCommand(command))
+            {
+                PrintUsage();
+                return 1;
+            }
+
+            ParsedArgs parsed = ParsedArgs.Parse(args.Skip(1).ToArray());
+            ProfileTarget target = ProfileTarget.FromParsedArgs(parsed);
 
             if (command == "list")
             {
@@ -357,6 +364,33 @@ namespace TempProfileFixer
 
             PrintUsage();
             return 1;
+        }
+
+        private static bool IsHelpCommand(string command)
+        {
+            return command == "help" ||
+                command == "--help" ||
+                command == "-h" ||
+                command == "/?";
+        }
+
+        private static bool IsKnownCommand(string command)
+        {
+            return command == "list" ||
+                command == "doctor" ||
+                command == "diagnostics" ||
+                command == "check" ||
+                command == "dry-run" ||
+                command == "plan" ||
+                command == "rebuild" ||
+                command == "rebuild-profile" ||
+                command == "remove-registry" ||
+                command == "remove-reg" ||
+                command == "delete-registry" ||
+                command == "delete-profile" ||
+                command == "delete" ||
+                command == "remove-bak" ||
+                command == "fix-bak";
         }
 
         private static ProfileRecord GetProfileForCommand(ParsedArgs parsed, ProfileTarget target, string commandName)

@@ -31,6 +31,15 @@ if ($sourceText -notmatch 'Skipped unreadable ProfileList key') {
 if ($sourceText -notmatch 'AddWarning\("ProfileList registry"') {
     throw 'Diagnostics should report partial ProfileList registry reads as warnings.'
 }
+$runMethodStart = $sourceText.IndexOf('public static int Run(string[] args)', [StringComparison]::Ordinal)
+$helpCommandIndex = $sourceText.IndexOf('IsHelpCommand(command)', $runMethodStart, [StringComparison]::Ordinal)
+$parseArgsIndex = $sourceText.IndexOf('ParsedArgs.Parse', $runMethodStart, [StringComparison]::Ordinal)
+if ($runMethodStart -lt 0 -or $helpCommandIndex -lt 0 -or $parseArgsIndex -lt 0 -or $helpCommandIndex -gt $parseArgsIndex) {
+    throw 'Command-line help should be printed before parsing target arguments.'
+}
+if ($sourceText -notmatch 'IsKnownCommand\(command\)') {
+    throw 'Unknown commands should print usage before building a profile target.'
+}
 
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).
     IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -87,6 +96,20 @@ if (($helpOutput -join "`n") -notmatch '--profile') {
 }
 if (($helpOutput -join "`n") -notmatch 'doctor') {
     throw 'help command did not advertise diagnostics.'
+}
+
+$helpWithTargetOutput = & $exe help --computer 'PC-DOES-NOT-NEED-TO-EXIST' --users-root '\\PC-DOES-NOT-NEED-TO-EXIST\Z$\Users' 2>&1
+if ($LASTEXITCODE -ne 0) {
+    throw "help command should ignore target arguments and print usage: $helpWithTargetOutput"
+}
+
+$unknownOutput = & $exe definitely-not-a-command --computer 'PC-DOES-NOT-NEED-TO-EXIST' 2>&1
+$unknownExit = $LASTEXITCODE
+if ($unknownExit -ne 1) {
+    throw "unknown command returned an unexpected exit code ${unknownExit}: $unknownOutput"
+}
+if (($unknownOutput -join "`n") -notmatch 'Commands:') {
+    throw 'unknown command did not print usage.'
 }
 
 $doctorOutput = & $exe doctor 2>&1
