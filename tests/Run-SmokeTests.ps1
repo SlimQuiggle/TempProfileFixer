@@ -189,6 +189,25 @@ if ($unblockText -notmatch 'Unblock-File') {
 if ($unblockText -notmatch 'Zone\.Identifier') {
     throw 'Unblock-Package.cmd does not include the older PowerShell Zone.Identifier fallback.'
 }
+if ($unblockText -notmatch '%SYSTEM32%\\choice\.exe') {
+    throw 'Unblock-Package.cmd should use the absolute system choice.exe path for broken PATH environments.'
+}
+if ($unblockText -notmatch '%SYSTEM32%\\find\.exe') {
+    throw 'Unblock-Package.cmd should use the absolute system find.exe path for broken PATH environments.'
+}
+if ($unblockText -notmatch '%SYSTEM32%\\WindowsPowerShell\\v1\.0\\powershell\.exe') {
+    throw 'Unblock-Package.cmd should use the absolute system PowerShell path when available.'
+}
+
+$unblockPath = Join-Path $repoRoot 'dist\Unblock-Package.cmd'
+$unblockEmptyPathOutput = & $env:ComSpec /d /c "set PATH=& echo Y|`"$unblockPath`"" 2>&1
+$unblockEmptyPathExit = $LASTEXITCODE
+if ($unblockEmptyPathExit -ne 0) {
+    throw "Unblock-Package.cmd failed with PATH emptied: $unblockEmptyPathOutput"
+}
+if (($unblockEmptyPathOutput -join "`n") -notmatch 'Package files unblocked') {
+    throw 'Unblock-Package.cmd did not report success with PATH emptied.'
+}
 
 $launcherText = Get-Content -LiteralPath (Join-Path $repoRoot 'dist\TempProfileFixer.cmd') -Raw
 if ($launcherText -notmatch '%SystemRoot%\\System32\\reg\.exe') {

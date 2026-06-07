@@ -87,7 +87,9 @@ If Windows reports that the downloaded files are blocked, run
 `Unblock-Package.cmd` after confirming the ZIP came from the official GitHub
 release. It only removes the Windows download block from files in the extracted
 tool folder. On older PowerShell versions, it falls back to clearing the
-`Zone.Identifier` download-block stream directly.
+`Zone.Identifier` download-block stream directly. Like the launcher, it uses
+system tool paths directly so it can still run when the workstation's `PATH` is
+damaged.
 
 Use the visible `Help / FAQ` button in the header, or `Help` > `Help / FAQ` in
 the menu bar, for a formatted overview of each button, right-click actions,
@@ -270,7 +272,8 @@ confirming the file is trusted.
 You can also run `Unblock-Package.cmd` from the extracted release folder after
 confirming the package is trusted. It uses PowerShell `Unblock-File` when
 available and falls back to direct `Zone.Identifier` stream clearing when that
-cmdlet is not present.
+cmdlet is not present. It uses system helper paths directly so the unblock step
+can still run on machines with a damaged `PATH`.
 
 Temp Profile Fixer is built for the .NET Framework 4 runtime. Supported Windows
 10/11 and current Windows Server builds normally include it. Older or stripped
