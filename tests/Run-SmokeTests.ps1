@@ -129,6 +129,37 @@ if ($normalizedLiteralRegistryPath -ne 'E:\PROFILES\REMOTEUSER') {
     throw "Literal registry ProfileImagePath normalization changed unexpectedly: $normalizedLiteralRegistryPath"
 }
 
+$parsedArgsType = $assembly.GetType('TempProfileFixer.ParsedArgs', $true)
+$profileTargetType = $assembly.GetType('TempProfileFixer.ProfileTarget', $true)
+$parseArgsMethod = $parsedArgsType.GetMethod('Parse', [Reflection.BindingFlags] 'Public, Static')
+$fromParsedArgsMethod = $profileTargetType.GetMethod('FromParsedArgs', [Reflection.BindingFlags] 'Public, Static')
+$profileImageRootProperty = $profileTargetType.GetProperty('ProfileImageRoot')
+$usersRootProperty = $profileTargetType.GetProperty('UsersRoot')
+
+[string[]]$localUsersRootArgs = @('--users-root', 'D:\Users')
+$parsedLocalUsersRoot = $parseArgsMethod.Invoke($null, [object[]](,$localUsersRootArgs))
+$localUsersRootTarget = $fromParsedArgsMethod.Invoke($null, [object[]]@($parsedLocalUsersRoot))
+if ($profileImageRootProperty.GetValue($localUsersRootTarget, $null) -ne 'D:\Users') {
+    throw 'Profile root was not inferred from local --users-root.'
+}
+
+[string[]]$remoteUsersRootArgs = @('--computer', 'PC-1234', '--users-root', '\\PC-1234\E$\Users')
+$parsedRemoteUsersRoot = $parseArgsMethod.Invoke($null, [object[]](,$remoteUsersRootArgs))
+$remoteUsersRootTarget = $fromParsedArgsMethod.Invoke($null, [object[]]@($parsedRemoteUsersRoot))
+if ($profileImageRootProperty.GetValue($remoteUsersRootTarget, $null) -ne 'E:\Users') {
+    throw 'Profile root was not inferred from remote admin-share --users-root.'
+}
+if ($usersRootProperty.GetValue($remoteUsersRootTarget, $null) -ne '\\PC-1234\E$\Users') {
+    throw 'Remote users root changed unexpectedly while inferring profile root.'
+}
+
+[string[]]$explicitProfileRootArgs = @('--users-root', 'D:\Users', '--profile-root', 'E:\Profiles')
+$parsedExplicitProfileRoot = $parseArgsMethod.Invoke($null, [object[]](,$explicitProfileRootArgs))
+$explicitProfileRootTarget = $fromParsedArgsMethod.Invoke($null, [object[]]@($parsedExplicitProfileRoot))
+if ($profileImageRootProperty.GetValue($explicitProfileRootTarget, $null) -ne 'E:\Profiles') {
+    throw 'Explicit --profile-root should override --users-root inference.'
+}
+
 foreach ($packagedFile in @('README.md', 'COMMAND-LINE.md', 'TempProfileFixer.exe.config', 'TempProfileFixer.cmd', 'Run-Diagnostics.cmd', 'Unblock-Package.cmd', 'SHA256SUMS.txt', 'TempProfileFixer-portable.zip')) {
     $packagedPath = Join-Path $repoRoot (Join-Path 'dist' $packagedFile)
     if (-not (Test-Path -LiteralPath $packagedPath)) {

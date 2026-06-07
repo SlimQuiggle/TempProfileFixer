@@ -187,11 +187,12 @@ access paths.
 .\dist\TempProfileFixer.exe rebuild --computer PC-1234 --profile SomeUser --yes --reboot
 ```
 
-If the target uses a non-standard profile root, override both the filesystem
-root and the registry-matching root:
+If the target uses a non-standard profile root, override the filesystem root.
+The registry-matching root is inferred from the `--users-root` drive or admin
+share unless `--profile-root` is supplied explicitly:
 
 ```powershell
-.\dist\TempProfileFixer.exe rebuild --computer PC-1234 --users-root \\PC-1234\D$\Users --profile-root D:\Users --profile SomeUser --yes
+.\dist\TempProfileFixer.exe rebuild --computer PC-1234 --users-root \\PC-1234\D$\Users --profile SomeUser --yes
 ```
 
 See `COMMAND-LINE.md` beside the EXE for a fuller command reference.

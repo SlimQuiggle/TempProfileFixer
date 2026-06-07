@@ -127,10 +127,11 @@ target admin share for filesystem work:
 .\TempProfileFixer.exe rebuild --computer PC-1234 --path C:\Users\SomeUser --yes
 ```
 
-Target a non-standard users root:
+Target a non-standard users root. The registry `ProfileImagePath` root is
+inferred from `--users-root` unless `--profile-root` is supplied explicitly:
 
 ```powershell
-.\TempProfileFixer.exe rebuild --computer PC-1234 --users-root \\PC-1234\D$\Users --profile-root D:\Users --profile SomeUser --yes
+.\TempProfileFixer.exe rebuild --computer PC-1234 --users-root \\PC-1234\D$\Users --profile SomeUser --yes
 ```
 
 ## Remote execution tools
@@ -171,8 +172,8 @@ Useful switches:
 - `--reboot`: start reboot automatically after a successful rebuild.
 - `--no-reboot-prompt`: do not prompt for reboot after rebuild.
 - `--computer PCNAME`: target a remote workstation from the current machine.
-- `--users-root PATH`: override the profile folder root used for filesystem work.
-- `--profile-root PATH`: override the root used to match registry `ProfileImagePath`.
+- `--users-root PATH`: override the profile folder root used for filesystem work. When `--profile-root` is omitted, the registry matching root is inferred from this path.
+- `--profile-root PATH`: explicitly override the root used to match registry `ProfileImagePath`.
 - `--system-drive D:`: use a different default drive when building default roots.
 
 ## Safety behavior

@@ -454,7 +454,7 @@ namespace TempProfileFixer
             Console.WriteLine("  --profile SomeUser       Selects C:\\Users\\SomeUser under the target users root.");
             Console.WriteLine("  --computer PCNAME        Uses \\\\PCNAME\\C$\\Users plus remote HKLM ProfileList access.");
             Console.WriteLine("  --users-root PATH        Overrides the filesystem users root.");
-            Console.WriteLine("  --profile-root PATH      Overrides the ProfileImagePath root used for registry matching.");
+            Console.WriteLine("  --profile-root PATH      Overrides the ProfileImagePath root used for registry matching; inferred from --users-root when omitted.");
             Console.WriteLine();
             Console.WriteLine("rebuild renames the profile folder to .old<date>, exports/deletes the matching normal SID key");
             Console.WriteLine("and matching .bak key, then prompts for reboot.");
@@ -656,15 +656,24 @@ namespace TempProfileFixer
             }
 
             string defaultProfileRoot = Path.Combine(EnsureDriveRoot(systemDrive), "Users");
+            bool hasExplicitProfileRoot = parsed.HasValue("profile-root");
             string profileRoot = parsed.GetValue("profile-root", defaultProfileRoot);
             string usersRoot = parsed.GetValue("users-root", null);
             if (String.IsNullOrWhiteSpace(usersRoot))
             {
                 usersRoot = String.IsNullOrWhiteSpace(computer) ? profileRoot : ToRemoteAdminShare(computer, profileRoot);
             }
-            else if (!String.IsNullOrWhiteSpace(computer))
+            else
             {
-                usersRoot = ConvertLogicalRootToRemote(computer, usersRoot);
+                if (!hasExplicitProfileRoot)
+                {
+                    profileRoot = InferProfileImageRootFromUsersRoot(usersRoot, defaultProfileRoot);
+                }
+
+                if (!String.IsNullOrWhiteSpace(computer))
+                {
+                    usersRoot = ConvertLogicalRootToRemote(computer, usersRoot);
+                }
             }
 
             return new ProfileTarget
@@ -748,6 +757,30 @@ namespace TempProfileFixer
             }
 
             return path;
+        }
+
+        private static string InferProfileImageRootFromUsersRoot(string usersRoot, string defaultProfileRoot)
+        {
+            if (String.IsNullOrWhiteSpace(usersRoot))
+            {
+                return defaultProfileRoot;
+            }
+
+            string root = usersRoot.Trim().Replace('/', '\\');
+            Match adminShareMatch = Regex.Match(root, @"^\\\\[^\\]+\\([A-Za-z])\$($|\\(.*)$)");
+            if (adminShareMatch.Success)
+            {
+                string suffix = adminShareMatch.Groups[3].Success ? adminShareMatch.Groups[3].Value : String.Empty;
+                return Char.ToUpperInvariant(adminShareMatch.Groups[1].Value[0]) + @":\" + suffix.TrimStart('\\');
+            }
+
+            if (LooksLikeDrivePath(root) || root.StartsWith(@"\\", StringComparison.Ordinal))
+            {
+                return root;
+            }
+
+            string driveRoot = EnsureDriveRoot(Path.GetPathRoot(defaultProfileRoot));
+            return Path.Combine(driveRoot, root);
         }
 
         private static string ToRemoteAdminShare(string computer, string localPath)
@@ -1184,6 +1217,8 @@ namespace TempProfileFixer
             AppendCode(box, "TempProfileFixer.exe list --computer PC-1234");
             AppendCode(box, "TempProfileFixer.exe dry-run --computer PC-1234 --profile jsmith");
             AppendCode(box, "TempProfileFixer.exe rebuild --computer PC-1234 --profile jsmith --yes --reboot");
+            AppendCode(box, "TempProfileFixer.exe rebuild --computer PC-1234 --users-root \\\\PC-1234\\D$\\Users --profile jsmith --yes");
+            AppendParagraph(box, "When --profile-root is omitted, the registry ProfileImagePath root is inferred from --users-root.");
             AppendHeading(box, "More commands");
             AppendParagraph(box, "The packaged README beside the EXE has the complete command reference with examples.");
         }
