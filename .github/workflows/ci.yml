@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  windows-smoke:
+    name: Windows build and smoke tests
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build package
+        shell: powershell
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
+
+      - name: Run smoke tests
+        shell: powershell
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Run-SmokeTests.ps1
+
+      - name: Upload portable bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: TempProfileFixer-portable
+          path: |
+            dist/TempProfileFixer-portable.zip
+            dist/SHA256SUMS.txt

@@ -137,4 +137,17 @@ finally {
     $zip.Dispose()
 }
 
+$extractRoot = Join-Path $obj 'portable extract with spaces'
+if (Test-Path -LiteralPath $extractRoot) {
+    Remove-Item -LiteralPath $extractRoot -Recurse -Force
+}
+New-Item -Path $extractRoot -ItemType Directory -Force | Out-Null
+Expand-Archive -LiteralPath $zipPath -DestinationPath $extractRoot -Force
+foreach ($zipFile in @('TempProfileFixer.exe', 'TempProfileFixer.exe.config', 'TempProfileFixer.cmd', 'Run-Diagnostics.cmd', 'README.md', 'COMMAND-LINE.md', 'SHA256SUMS.txt')) {
+    $extractedPath = Join-Path $extractRoot $zipFile
+    if (-not (Test-Path -LiteralPath $extractedPath)) {
+        throw "Portable ZIP extraction did not produce $zipFile."
+    }
+}
+
 Write-Host 'Smoke tests passed.'

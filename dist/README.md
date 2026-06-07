@@ -1,5 +1,7 @@
 # Temp Profile Fixer
 
+[![CI](https://github.com/SlimQuiggle/TempProfileFixer/actions/workflows/ci.yml/badge.svg)](https://github.com/SlimQuiggle/TempProfileFixer/actions/workflows/ci.yml)
+
 Temp Profile Fixer is a standalone Windows admin EXE for rebuilding a local
 Windows user profile and cleaning the matching temporary-profile registry state
 in one workflow.
@@ -257,3 +259,6 @@ Run the lightweight tests:
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File .\tests\Run-SmokeTests.ps1
 ```
+
+The public GitHub repository also runs the build and smoke tests on
+`windows-latest` through GitHub Actions.
