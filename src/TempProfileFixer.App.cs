@@ -1303,6 +1303,7 @@ namespace TempProfileFixer
             AppendBullet(box, "Registry keys are exported before they are deleted.");
             AppendBullet(box, "Rebuild preserves the old folder as a timestamped .old rollback copy.");
             AppendBullet(box, "Loaded, current, special/system, missing, and ambiguous profiles are blocked.");
+            AppendBullet(box, "Delete Profile can remove a folder-only temp profile with no matching SID when it is otherwise safe.");
             AppendBullet(box, "The tool does not collect the target user's password or attempt a fake login.");
             AppendHeading(box, "Expected final step");
             AppendParagraph(box, "After rebuild and reboot, have the target user sign in normally so Windows creates a clean local profile.");
@@ -1314,7 +1315,7 @@ namespace TempProfileFixer
             AppendHeading(box, "Rebuild Profile");
             AppendParagraph(box, "Runs the full .old rebuild: export matching ProfileList keys, rename the selected C:\\Users folder to .old<date>, delete matching normal and .bak registry keys, then start the reboot flow.");
             AppendHeading(box, "Delete Profile");
-            AppendParagraph(box, "Permanently deletes the selected profile folder and matching ProfileList registry keys after confirmation. This action does not create a .old folder copy.");
+            AppendParagraph(box, "Permanently deletes the selected profile folder and matching ProfileList registry keys after confirmation. If no matching SID or registry key exists, it can delete just the folder when the profile is otherwise safe. This action does not create a .old folder copy.");
             AppendHeading(box, "Help / FAQ");
             AppendParagraph(box, "Opens this formatted help window.");
             AppendHeading(box, "Refresh");
@@ -1342,7 +1343,7 @@ namespace TempProfileFixer
         {
             RichTextBox box = AddHelpTab(tabs, "FAQ");
             AppendHeading(box, "Why are Rebuild Profile and Delete Profile greyed out?");
-            AppendParagraph(box, "The selected profile is blocked. Common reasons are that it is the current admin profile, loaded/locked, special/system, missing a matching SID, matched to multiple SIDs or normal keys, or Windows profile state could not be verified.");
+            AppendParagraph(box, "The selected profile is blocked. Common reasons are that it is the current admin profile, loaded/locked, special/system, matched to multiple SIDs or normal keys, or Windows profile state could not be verified. Rebuild Profile also requires a matching SID; Delete Profile can still remove a folder-only temp profile when that missing SID is the only issue.");
             AppendHeading(box, "Does Rebuild Profile delete user files?");
             AppendParagraph(box, "No. Rebuild Profile renames the selected folder to a timestamped .old folder so it remains on disk as a rollback copy.");
             AppendHeading(box, "Does Delete Profile keep the old folder?");
@@ -1510,10 +1511,11 @@ namespace TempProfileFixer
             ProfileRecord selected = GetSelectedProfile();
             bool hasSelection = selected != null;
             bool canRebuild = hasSelection && !selected.IsBlocked;
+            bool canDelete = hasSelection && !ProfileService.CreateDeleteProfilePlan(selected).IsBlocked;
             rebuildButton.Enabled = canRebuild;
             ApplyRebuildButtonStyle(canRebuild);
-            deleteProfileButton.Enabled = canRebuild;
-            ApplyDeleteProfileButtonStyle(canRebuild);
+            deleteProfileButton.Enabled = canDelete;
+            ApplyDeleteProfileButtonStyle(canDelete);
             rebuildMenuItem.Enabled = canRebuild;
             removeRegistryMenuItem.Enabled = hasSelection && selected.HasRegistryEntries && !selected.IsBlocked;
             copySidMenuItem.Enabled = hasSelection && !String.IsNullOrWhiteSpace(selected.BaseSid);
@@ -1799,7 +1801,8 @@ namespace TempProfileFixer
             string stateWarning;
             List<UserProfileState> states = GetUserProfileStates(target.ComputerName, out stateError, out stateWarning);
             string currentSid = target.IsRemote ? String.Empty : GetCurrentSid();
-            return BuildInventory(folders, entries, states, currentSid, stateError, stateWarning, target.RegistryPath, registryError);
+            string currentProfilePath = target.IsRemote ? String.Empty : GetCurrentProfilePath();
+            return BuildInventory(folders, entries, states, currentSid, currentProfilePath, stateError, stateWarning, target.RegistryPath, registryError);
         }
 
         public static CompatibilityReport RunDiagnostics(ProfileTarget target)
@@ -2011,9 +2014,11 @@ namespace TempProfileFixer
             keys = keys.Where(k => !String.IsNullOrWhiteSpace(k)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
             List<string> blockReasons = new List<string>(profile.BlockReasons ?? new List<string>());
+            List<string> warnings = new List<string>(profile.Warnings ?? new List<string>());
+            blockReasons.RemoveAll(IsFolderOnlyDeleteAllowedBlockReason);
             if (keys.Count == 0)
             {
-                blockReasons.Add("No matching ProfileList registry key");
+                warnings.Add("No matching ProfileList registry key; only the profile folder will be deleted.");
             }
 
             return new DeleteProfilePlan
@@ -2025,8 +2030,13 @@ namespace TempProfileFixer
                 RegistryKeyNames = keys,
                 IsBlocked = blockReasons.Count > 0,
                 BlockReasons = blockReasons,
-                Warnings = new List<string>(profile.Warnings ?? new List<string>())
+                Warnings = warnings
             };
+        }
+
+        private static bool IsFolderOnlyDeleteAllowedBlockReason(string reason)
+        {
+            return String.Equals(reason, "No matching ProfileList SID", StringComparison.OrdinalIgnoreCase);
         }
 
         public static RebuildResult RebuildProfile(string profilePath, string usersRoot)
@@ -2355,6 +2365,18 @@ namespace TempProfileFixer
             return identity.User == null ? String.Empty : identity.User.Value;
         }
 
+        public static string GetCurrentProfilePath()
+        {
+            try
+            {
+                return NormalizePath(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+            }
+            catch
+            {
+                return String.Empty;
+            }
+        }
+
         public static string NormalizePath(string path)
         {
             if (String.IsNullOrWhiteSpace(path))
@@ -2647,6 +2669,7 @@ namespace TempProfileFixer
             List<ProfileListEntry> entries,
             List<UserProfileState> states,
             string currentSid,
+            string currentProfilePath,
             string stateError,
             string stateWarning,
             string registryRoot,
@@ -2717,6 +2740,10 @@ namespace TempProfileFixer
                     blockReasons.Add("Multiple SIDs match this folder");
                 }
                 if (!String.IsNullOrWhiteSpace(baseSid) && String.Equals(baseSid, currentSid, StringComparison.OrdinalIgnoreCase))
+                {
+                    blockReasons.Add("Current admin profile");
+                }
+                else if (!String.IsNullOrWhiteSpace(currentProfilePath) && String.Equals(folder.NormalizedPath, currentProfilePath, StringComparison.OrdinalIgnoreCase))
                 {
                     blockReasons.Add("Current admin profile");
                 }
@@ -3245,7 +3272,7 @@ namespace TempProfileFixer
             StringBuilder builder = new StringBuilder();
             builder.AppendLine("Folder: " + FolderName);
             builder.AppendLine("Profile path to delete: " + ProfilePath);
-            builder.AppendLine("Base SID: " + BaseSid);
+            builder.AppendLine("Base SID: " + (String.IsNullOrWhiteSpace(BaseSid) ? "(none matched)" : BaseSid));
             builder.AppendLine("Blocked: " + IsBlocked);
             if (BlockReasons != null && BlockReasons.Count > 0)
             {
@@ -3256,7 +3283,12 @@ namespace TempProfileFixer
                 builder.AppendLine("Warnings: " + String.Join("; ", Warnings.ToArray()));
             }
             builder.AppendLine("Registry keys to export and delete:");
-            foreach (string keyName in RegistryKeyNames ?? new List<string>())
+            List<string> keys = RegistryKeyNames ?? new List<string>();
+            if (keys.Count == 0)
+            {
+                builder.AppendLine("  (none found)");
+            }
+            foreach (string keyName in keys)
             {
                 builder.AppendLine("  " + RegistryRoot + "\\" + keyName);
             }
@@ -3267,7 +3299,14 @@ namespace TempProfileFixer
             }
             else
             {
-                builder.AppendLine("This will permanently delete the profile folder and remove the matching ProfileList key(s).");
+                if (keys.Count == 0)
+                {
+                    builder.AppendLine("This will permanently delete the profile folder. No matching ProfileList key was found.");
+                }
+                else
+                {
+                    builder.AppendLine("This will permanently delete the profile folder and remove the matching ProfileList key(s).");
+                }
             }
             return builder.ToString();
         }
@@ -3361,7 +3400,12 @@ namespace TempProfileFixer
             builder.AppendLine();
             builder.AppendLine("Deleted profile path: " + ProfilePath);
             builder.AppendLine("Removed keys:");
-            foreach (string keyName in RemovedKeys ?? new List<string>())
+            List<string> keys = RemovedKeys ?? new List<string>();
+            if (keys.Count == 0)
+            {
+                builder.AppendLine("  (none found)");
+            }
+            foreach (string keyName in keys)
             {
                 builder.AppendLine("  " + RegistryRoot + "\\" + keyName);
             }

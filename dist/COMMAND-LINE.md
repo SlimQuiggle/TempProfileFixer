@@ -12,12 +12,13 @@ EXE with the same arguments. The launcher uses the system `reg.exe` path
 directly and checks both registry views so it can still work when the
 workstation's `PATH` is damaged.
 
-For the most reliable transfer to another computer, use
-`TempProfileFixer-portable.zip` from the latest GitHub release:
-https://github.com/SlimQuiggle/TempProfileFixer/releases/latest. Extract the ZIP
-locally and run `Run-Diagnostics.cmd` before rebuilding a profile. That helper
-keeps the window open so the diagnostics output can be read after a double-click
-launch.
+For the simplest transfer to another computer, download the standalone portable
+`TempProfileFixer.exe` from the latest GitHub release:
+https://github.com/SlimQuiggle/TempProfileFixer/releases/latest. If you want the
+diagnostic launcher, unblock helper, offline docs, and checksums together, use
+`TempProfileFixer-portable.zip` instead. Extract the ZIP locally and run
+`Run-Diagnostics.cmd` before rebuilding a profile. That helper keeps the window
+open so the diagnostics output can be read after a double-click launch.
 If Windows blocks the extracted files, run `Unblock-Package.cmd` only after
 confirming the ZIP came from the trusted GitHub release. The helper uses
 `Unblock-File` when available and falls back to clearing `Zone.Identifier`
@@ -80,6 +81,12 @@ Delete a profile folder and matching ProfileList entries:
 
 ```powershell
 .\TempProfileFixer.exe delete-profile --profile SomeUser --yes
+```
+
+Delete a temp profile folder that has no matching SID or registry key by path:
+
+```powershell
+.\TempProfileFixer.exe delete-profile --path C:\Users\TEMP.SomeUser --yes
 ```
 
 Remove only matching registry entries without renaming or deleting the folder:
@@ -191,10 +198,14 @@ Useful switches:
 ## Safety behavior
 
 Rebuild and delete actions are blocked when the selected profile is current,
-loaded, special/system, missing a matching ProfileList SID, matched ambiguously,
-or loaded state cannot be verified. Registry keys are exported before deletion.
+loaded, special/system, matched ambiguously, or loaded state cannot be verified.
+Rebuild is also blocked when a matching ProfileList SID is missing. Registry
+keys are exported before deletion.
 Delete Profile removes directory reparse points, such as profile junctions,
 without recursing into their targets.
+Delete Profile can remove a folder-only temp profile that has no matching
+ProfileList SID or registry key. Rebuild Profile still requires a matched SID so
+it can export/delete the correct registry state.
 
 ## Troubleshooting startup failures
 

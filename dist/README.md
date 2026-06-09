@@ -33,8 +33,11 @@ data paths are damaged:
 .\dist\TempProfileFixer.exe doctor
 ```
 
-For another computer, use the latest GitHub release ZIP:
-[TempProfileFixer-portable.zip](https://github.com/SlimQuiggle/TempProfileFixer/releases/latest).
+For another computer, download the standalone portable `TempProfileFixer.exe`
+from the latest GitHub release:
+[TempProfileFixer releases](https://github.com/SlimQuiggle/TempProfileFixer/releases/latest).
+The ZIP is still published for admins who want the helper scripts and offline
+docs beside the EXE.
 
 ## Build
 
@@ -49,6 +52,7 @@ The output is:
 
 ```text
 dist\TempProfileFixer.exe
+dist\TempProfileFixer-portable.zip
 dist\TempProfileFixer.cmd
 dist\Run-Diagnostics.cmd
 dist\Unblock-Package.cmd
@@ -56,12 +60,12 @@ dist\TempProfileFixer.exe.config
 dist\README.md
 dist\COMMAND-LINE.md
 dist\SHA256SUMS.txt
-dist\TempProfileFixer-portable.zip
 ```
 
-For another computer, copy `dist\TempProfileFixer-portable.zip` or download the
-latest release ZIP, extract it locally, and run `Run-Diagnostics.cmd` first. The
-ZIP keeps the EXE, runtime config, launchers, docs, and checksums together.
+For another computer, copy `dist\TempProfileFixer.exe` or download the latest
+release EXE. If you want the diagnostic launcher, unblock helper, offline docs,
+and checksums together, use `dist\TempProfileFixer-portable.zip` instead and run
+`Run-Diagnostics.cmd` first.
 
 ## Run
 
@@ -113,8 +117,10 @@ It greys out when the highlighted profile is locked, loaded, current, or
 otherwise blocked.
 
 The red top `Delete Profile` button permanently deletes the highlighted profile
-folder and removes its matching ProfileList registry entries. It uses the same
-blocked-profile safety checks as rebuild and greys out for locked profiles.
+folder and removes its matching ProfileList registry entries. If a temp profile
+folder has no matching SID or registry key, Delete Profile can still remove the
+folder as long as it is not the current, loaded, special/system, missing, or
+otherwise unsafe profile.
 
 ## Command line
 
@@ -225,6 +231,10 @@ The app blocks rebuilds for profiles that are:
 - matched to multiple SIDs
 - matched to multiple normal ProfileList keys
 - unable to verify loaded state through `Win32_UserProfile`
+
+Delete Profile can remove a folder-only temp profile that has no matching
+ProfileList SID or registry key. Rebuild Profile still requires a matched SID so
+it can export/delete the correct registry state.
 
 The app does not collect the target user's password and does not try to create a
 fake interactive sign-in. Windows creates the fresh profile when the target user

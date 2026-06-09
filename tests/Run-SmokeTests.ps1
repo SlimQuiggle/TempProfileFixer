@@ -55,6 +55,15 @@ if ($sourceText -notmatch 'SafeGetTempPath') {
 if ($sourceText -match 'Path\.Combine\(Environment\.GetFolderPath\(Environment\.SpecialFolder\.System\)') {
     throw 'System tool lookup should not depend on a single unguarded GetFolderPath(System) call.'
 }
+if ($sourceText -notmatch 'IsFolderOnlyDeleteAllowedBlockReason') {
+    throw 'Delete Profile should allow folder-only cleanup when the only block reason is a missing ProfileList SID.'
+}
+if ($sourceText -notmatch 'No matching ProfileList registry key; only the profile folder will be deleted') {
+    throw 'Folder-only profile deletion should warn when no registry key is matched.'
+}
+if ($sourceText -notmatch 'GetCurrentProfilePath') {
+    throw 'Inventory should protect the current admin profile by path even when SID matching is missing.'
+}
 $runMethodStart = $sourceText.IndexOf('public static int Run(string[] args)', [StringComparison]::Ordinal)
 $helpCommandIndex = $sourceText.IndexOf('IsHelpCommand(command)', $runMethodStart, [StringComparison]::Ordinal)
 $parseArgsIndex = $sourceText.IndexOf('ParsedArgs.Parse', $runMethodStart, [StringComparison]::Ordinal)
@@ -197,6 +206,30 @@ if ($warningReportText -notmatch 'completed with warnings') {
 }
 
 $profileServiceType = $assembly.GetType('TempProfileFixer.ProfileService', $true)
+$profileRecordType = $assembly.GetType('TempProfileFixer.ProfileRecord', $true)
+$createDeleteProfilePlanMethod = $profileServiceType.GetMethod('CreateDeleteProfilePlan', [Reflection.BindingFlags] 'Public, Static')
+$stringListType = [System.Collections.Generic.List[string]]
+$folderOnlyProfile = [Activator]::CreateInstance($profileRecordType)
+$profileRecordType.GetProperty('FolderName').SetValue($folderOnlyProfile, 'Temp.NoSid', $null)
+$profileRecordType.GetProperty('ProfilePath').SetValue($folderOnlyProfile, 'C:\Users\Temp.NoSid', $null)
+$profileRecordType.GetProperty('RegistryRoot').SetValue($folderOnlyProfile, 'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList', $null)
+$profileRecordType.GetProperty('BaseSid').SetValue($folderOnlyProfile, '', $null)
+$profileRecordType.GetProperty('NormalKeyNames').SetValue($folderOnlyProfile, (New-Object $stringListType), $null)
+$profileRecordType.GetProperty('BakKeyNames').SetValue($folderOnlyProfile, (New-Object $stringListType), $null)
+$folderOnlyBlockReasons = New-Object $stringListType
+[void]$folderOnlyBlockReasons.Add('No matching ProfileList SID')
+$profileRecordType.GetProperty('BlockReasons').SetValue($folderOnlyProfile, $folderOnlyBlockReasons, $null)
+$profileRecordType.GetProperty('Warnings').SetValue($folderOnlyProfile, (New-Object $stringListType), $null)
+$folderOnlyDeletePlan = $createDeleteProfilePlanMethod.Invoke($null, @($folderOnlyProfile))
+$deletePlanType = $folderOnlyDeletePlan.GetType()
+if ($deletePlanType.GetProperty('IsBlocked').GetValue($folderOnlyDeletePlan, $null) -ne $false) {
+    throw 'Delete Profile should not be blocked for a folder-only temp profile with no matching SID.'
+}
+$folderOnlyDeletePlanText = $deletePlanType.GetMethod('ToDisplayText').Invoke($folderOnlyDeletePlan, @())
+if ($folderOnlyDeletePlanText -notmatch 'No matching ProfileList key was found' -or $folderOnlyDeletePlanText -notmatch '\(none found\)') {
+    throw 'Folder-only delete plan should clearly state that no ProfileList key was found.'
+}
+
 $normalizeRegistryMethod = $profileServiceType.GetMethod(
     'NormalizeRegistryProfilePath',
     [Reflection.BindingFlags] 'Public, Static')
@@ -252,6 +285,21 @@ foreach ($packagedFile in @('README.md', 'COMMAND-LINE.md', 'TempProfileFixer.ex
     if (-not (Test-Path -LiteralPath $packagedPath)) {
         throw "Expected packaged file is missing: $packagedPath"
     }
+}
+
+$standaloneRoot = Join-Path $obj 'standalone exe with spaces'
+if (Test-Path -LiteralPath $standaloneRoot) {
+    Remove-Item -LiteralPath $standaloneRoot -Recurse -Force
+}
+New-Item -Path $standaloneRoot -ItemType Directory -Force | Out-Null
+$standaloneExe = Join-Path $standaloneRoot 'TempProfileFixer.exe'
+Copy-Item -LiteralPath (Join-Path $repoRoot 'dist\TempProfileFixer.exe') -Destination $standaloneExe -Force
+$standaloneHelpOutput = & $standaloneExe help 2>&1
+if ($LASTEXITCODE -ne 0) {
+    throw "standalone EXE help failed without companion files: $standaloneHelpOutput"
+}
+if (($standaloneHelpOutput -join "`n") -notmatch 'TempProfileFixer\.exe') {
+    throw 'standalone EXE did not print help output without companion files.'
 }
 
 $diagnosticsLauncherText = Get-Content -LiteralPath (Join-Path $repoRoot 'dist\Run-Diagnostics.cmd') -Raw
