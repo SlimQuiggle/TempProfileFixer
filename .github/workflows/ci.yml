@@ -32,3 +32,7 @@ jobs:
       - name: Run smoke tests
         shell: powershell
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Run-SmokeTests.ps1
+
+      - name: Run behavioral safety tests
+        shell: powershell
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Run-BehavioralTests.ps1

@@ -24,7 +24,8 @@ if ($manifestText -match 'requireAdministrator') {
     throw 'The application manifest should not require UAC before help or diagnostics can run.'
 }
 
-$sourceText = Get-Content -LiteralPath (Join-Path $repoRoot 'src\TempProfileFixer.App.cs') -Raw
+$sourceFiles = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'src') -Filter '*.cs' -File | Sort-Object Name)
+$sourceText = ($sourceFiles | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }) -join "`n"
 if ($sourceText -notmatch 'Skipped unreadable ProfileList key') {
     throw 'ProfileList enumeration should report skipped unreadable subkeys instead of failing the whole scan.'
 }
@@ -64,6 +65,24 @@ if ($sourceText -notmatch 'No matching ProfileList registry key; only the profil
 if ($sourceText -notmatch 'GetCurrentProfilePath') {
     throw 'Inventory should protect the current admin profile by path even when SID matching is missing.'
 }
+if ($sourceText -notmatch 'BackgroundWorker') {
+    throw 'GUI work should run through the background-work controller.'
+}
+if ($sourceText -notmatch 'AutoScaleMode\.Dpi') {
+    throw 'GUI should remain DPI aware.'
+}
+if ($sourceText -notmatch 'RebootCountdownDialog' -or $sourceText -notmatch 'AbortReboot') {
+    throw 'GUI should provide a cancelable reboot countdown.'
+}
+if ($sourceText -notmatch 'CreateBakRemovalPlan') {
+    throw '.bak removal should use the centralized safety plan.'
+}
+if (Test-Path -LiteralPath (Join-Path $repoRoot 'src\TempProfileFixer.App.cs')) {
+    throw 'The monolithic application source should remain split by subsystem.'
+}
+if ($sourceFiles.Count -lt 6) {
+    throw 'Expected the application source to be split into subsystem files.'
+}
 $runMethodStart = $sourceText.IndexOf('public static int Run(string[] args)', [StringComparison]::Ordinal)
 $helpCommandIndex = $sourceText.IndexOf('IsHelpCommand(command)', $runMethodStart, [StringComparison]::Ordinal)
 $parseArgsIndex = $sourceText.IndexOf('ParsedArgs.Parse', $runMethodStart, [StringComparison]::Ordinal)
@@ -98,7 +117,7 @@ if (-not $isAdmin) {
         /reference:System.Drawing.dll `
         /reference:System.Management.dll `
         /reference:System.Windows.Forms.dll `
-        (Join-Path $repoRoot 'src\TempProfileFixer.App.cs')
+        @($sourceFiles.FullName + (Join-Path $obj 'GeneratedVersionInfo.cs'))
     if ($LASTEXITCODE -ne 0) {
         throw "Smoke-test compile failed with exit code $LASTEXITCODE."
     }
@@ -131,6 +150,11 @@ if (($helpOutput -join "`n") -notmatch 'doctor') {
     throw 'help command did not advertise diagnostics.'
 }
 
+$versionOutput = & $exe version 2>&1
+if ($LASTEXITCODE -ne 0 -or ($versionOutput -join "`n").Trim() -ne '0.2.0') {
+    throw "version command did not report 0.2.0: $versionOutput"
+}
+
 $helpWithTargetOutput = & $exe help --computer 'PC-DOES-NOT-NEED-TO-EXIST' --users-root '\\PC-DOES-NOT-NEED-TO-EXIST\Z$\Users' 2>&1
 if ($LASTEXITCODE -ne 0) {
     throw "help command should ignore target arguments and print usage: $helpWithTargetOutput"
@@ -155,6 +179,9 @@ if (($doctorOutput -join "`n") -notmatch 'compatibility diagnostics') {
 }
 if (($doctorOutput -join "`n") -notmatch 'ProfileList registry') {
     throw 'doctor command did not check ProfileList registry access.'
+}
+if (($doctorOutput -join "`n") -notmatch 'Application version - 0.2.0') {
+    throw 'doctor command did not report application version 0.2.0.'
 }
 if (($doctorOutput -join "`n") -match 'C:Users') {
     throw 'doctor command used a drive-relative C:Users path instead of C:\Users.'
