@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$Configuration = 'Release',
-    [string]$OutputFile
+    [string]$OutputFile,
+    [string]$Version = '0.2.0'
 )
 
 Set-StrictMode -Version 2.0
@@ -23,6 +24,24 @@ else {
 
 $dist = Join-Path $repoRoot 'dist'
 New-Item -Path $dist -ItemType Directory -Force | Out-Null
+$obj = Join-Path $repoRoot 'obj'
+New-Item -Path $obj -ItemType Directory -Force | Out-Null
+
+if ($Version -notmatch '^\d+\.\d+\.\d+$') {
+    throw "Version must use major.minor.patch format; received '$Version'."
+}
+$assemblyVersion = "$Version.0"
+$generatedVersionSource = Join-Path $obj 'GeneratedVersionInfo.cs'
+$versionSource = @(
+    'using System.Reflection;',
+    '[assembly: AssemblyTitle("Temp Profile Fixer")]',
+    '[assembly: AssemblyProduct("Temp Profile Fixer")]',
+    '[assembly: AssemblyCompany("Flex3Designs")]',
+    "[assembly: AssemblyVersion(`"$assemblyVersion`")]",
+    "[assembly: AssemblyFileVersion(`"$assemblyVersion`")]",
+    "[assembly: AssemblyInformationalVersion(`"$Version`")]"
+)
+Set-Content -LiteralPath $generatedVersionSource -Value $versionSource -Encoding UTF8
 
 if ([string]::IsNullOrWhiteSpace($OutputFile)) {
     $outFile = Join-Path $dist 'TempProfileFixer.exe'
@@ -34,7 +53,8 @@ else {
         New-Item -Path $outDirectory -ItemType Directory -Force | Out-Null
     }
 }
-$source = Join-Path $repoRoot 'src\TempProfileFixer.App.cs'
+$sources = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'src') -Filter '*.cs' -File | Sort-Object Name | ForEach-Object { $_.FullName })
+$sources += $generatedVersionSource
 $manifest = Join-Path $repoRoot 'TempProfileFixer.exe.manifest'
 $appConfig = Join-Path $repoRoot 'TempProfileFixer.exe.config'
 $launcher = Join-Path $repoRoot 'TempProfileFixer.cmd'
@@ -61,7 +81,7 @@ $args = @(
     '/reference:System.Drawing.dll',
     '/reference:System.Management.dll',
     '/reference:System.Windows.Forms.dll',
-    $source
+    $sources
 )
 
 if ($Configuration -ieq 'Debug') {

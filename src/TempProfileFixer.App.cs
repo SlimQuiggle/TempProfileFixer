@@ -1,6 +1,7 @@
 using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -11,6 +12,7 @@ using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace TempProfileFixer
@@ -352,6 +354,12 @@ namespace TempProfileFixer
         {
             string command = args[0].Trim().ToLowerInvariant();
 
+            if (command == "version" || command == "--version" || command == "-v")
+            {
+                Console.WriteLine(AppVersion.Current);
+                return 0;
+            }
+
             if (IsHelpCommand(command))
             {
                 PrintUsage();
@@ -463,16 +471,11 @@ namespace TempProfileFixer
             if (command == "remove-bak" || command == "fix-bak")
             {
                 ProfileRecord profile = GetProfileForCommand(parsed, target, "remove-bak");
-                if (!profile.BakKeyPresent)
+                BakRemovalPlan plan = ProfileService.CreateBakRemovalPlan(profile);
+                Console.WriteLine(plan.ToDisplayText());
+                if (plan.IsBlocked)
                 {
-                    Console.WriteLine("No .bak ProfileList key was found for " + profile.ProfilePath + ".");
-                    return 0;
-                }
-
-                Console.WriteLine("The following .bak ProfileList key(s) will be exported and deleted:");
-                foreach (string keyName in profile.BakKeyNames)
-                {
-                    Console.WriteLine("  " + profile.RegistryRoot + "\\" + keyName);
+                    throw new InvalidOperationException(".bak removal is blocked: " + String.Join("; ", plan.BlockReasons.ToArray()));
                 }
 
                 if (!parsed.HasFlag("yes") && !ConfirmTyped("Type REMOVEBAK to delete the listed .bak key(s): ", "REMOVEBAK"))
@@ -514,7 +517,10 @@ namespace TempProfileFixer
                 command == "delete-profile" ||
                 command == "delete" ||
                 command == "remove-bak" ||
-                command == "fix-bak";
+                command == "fix-bak" ||
+                command == "version" ||
+                command == "--version" ||
+                command == "-v";
         }
 
         private static ProfileRecord GetProfileForCommand(ParsedArgs parsed, ProfileTarget target, string commandName)
@@ -600,6 +606,7 @@ namespace TempProfileFixer
             Console.WriteLine("  TempProfileFixer.exe");
             Console.WriteLine();
             Console.WriteLine("Commands:");
+            Console.WriteLine("  TempProfileFixer.exe version");
             Console.WriteLine("  TempProfileFixer.exe list [--computer PCNAME] [--users-root C:\\Users]");
             Console.WriteLine("  TempProfileFixer.exe doctor [--computer PCNAME] [--users-root C:\\Users]");
             Console.WriteLine("  TempProfileFixer.exe dry-run (--profile SomeUser | --path C:\\Users\\SomeUser | --sid S-1-...) [--computer PCNAME]");
@@ -1767,6 +1774,8 @@ namespace TempProfileFixer
         public const string ProfileListRegPath = @"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList";
 
         private static readonly Regex OldProfileRegex = new Regex(@"\.old(\.?\d{8}-\d{6}(\.\d+)?)?$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly IProfileMutationAdapter MutationAdapter = new WindowsProfileMutationAdapter();
+        private static int runSequence;
 
         public static List<ProfileRecord> GetProfiles(string usersRoot)
         {
@@ -1813,6 +1822,7 @@ namespace TempProfileFixer
             }
 
             CompatibilityReport report = new CompatibilityReport { Target = target.DisplayName };
+            report.AddOk("Application version", AppVersion.Current);
             report.AddOk("Executable", Application.ExecutablePath);
             report.AddOk("Operating system", Environment.OSVersion.VersionString);
             report.AddOk(".NET runtime", Environment.Version.ToString());
@@ -2034,6 +2044,36 @@ namespace TempProfileFixer
             };
         }
 
+        public static BakRemovalPlan CreateBakRemovalPlan(ProfileRecord profile)
+        {
+            if (profile == null)
+            {
+                throw new ArgumentNullException("profile");
+            }
+
+            List<string> keys = (profile.BakKeyNames ?? new List<string>())
+                .Where(k => !String.IsNullOrWhiteSpace(k))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            List<string> blockReasons = new List<string>(profile.BlockReasons ?? new List<string>());
+            if (keys.Count == 0)
+            {
+                blockReasons.Add("No matching .bak ProfileList key");
+            }
+
+            return new BakRemovalPlan
+            {
+                FolderName = profile.FolderName,
+                ProfilePath = profile.ProfilePath,
+                BaseSid = profile.BaseSid,
+                RegistryRoot = profile.RegistryRoot,
+                RegistryKeyNames = keys,
+                IsBlocked = blockReasons.Count > 0,
+                BlockReasons = blockReasons,
+                Warnings = new List<string>(profile.Warnings ?? new List<string>())
+            };
+        }
+
         private static bool IsFolderOnlyDeleteAllowedBlockReason(string reason)
         {
             return String.Equals(reason, "No matching ProfileList SID", StringComparison.OrdinalIgnoreCase);
@@ -2053,7 +2093,7 @@ namespace TempProfileFixer
                 throw new InvalidOperationException("Profile rebuild is blocked: " + String.Join("; ", plan.BlockReasons.ToArray()));
             }
 
-            string runId = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            string runId = CreateRunId();
             string safeName = SafeFileName(profile.FolderName);
             string backupDirectory = Path.Combine(GetAppDirectory(), "backups", runId + "-" + safeName);
             string logDirectory = Path.Combine(GetAppDirectory(), "logs");
@@ -2065,23 +2105,19 @@ namespace TempProfileFixer
             WriteLog(logPath, "Base SID: " + profile.BaseSid);
             WriteLog(logPath, "Rename target: " + plan.RenameTo);
 
+            string phase = "exporting registry backups";
+            List<string> completedActions = new List<string>();
             try
             {
-                foreach (string keyName in plan.RegistryKeyNames)
-                {
-                    string destination = Path.Combine(backupDirectory, keyName + ".reg");
-                    WriteLog(logPath, "Exporting ProfileList key " + keyName + " to " + destination);
-                    ExportRegistryKey(keyName, destination, target.ComputerName);
-                }
+                ExportAndValidateRegistryKeys(plan.RegistryKeyNames, backupDirectory, target.ComputerName, logPath, MutationAdapter);
 
+                phase = "renaming the profile folder";
                 WriteLog(logPath, "Renaming " + plan.ProfilePath + " to " + plan.RenameTo);
-                Directory.Move(plan.ProfilePath, plan.RenameTo);
+                MutationAdapter.MoveDirectory(plan.ProfilePath, plan.RenameTo);
+                completedActions.Add("Renamed profile folder to " + plan.RenameTo);
 
-                foreach (string keyName in plan.RegistryKeyNames)
-                {
-                    WriteLog(logPath, "Removing ProfileList key " + keyName);
-                    RemoveRegistryKey(keyName, target.ComputerName);
-                }
+                phase = "removing ProfileList registry keys";
+                RemoveRegistryKeys(plan.RegistryKeyNames, target.ComputerName, logPath, MutationAdapter, completedActions);
 
                 WriteLog(logPath, "Rebuild completed successfully.");
 
@@ -2099,7 +2135,7 @@ namespace TempProfileFixer
             catch (Exception ex)
             {
                 WriteLog(logPath, "FAILED: " + ex.Message);
-                throw;
+                throw CreateOperationFailure("Profile rebuild", phase, backupDirectory, logPath, plan.RenameTo, completedActions, ex);
             }
         }
 
@@ -2117,7 +2153,7 @@ namespace TempProfileFixer
                 throw new InvalidOperationException("Registry removal is blocked: " + String.Join("; ", plan.BlockReasons.ToArray()));
             }
 
-            string runId = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            string runId = CreateRunId();
             string safeName = SafeFileName(profile.FolderName);
             string backupDirectory = Path.Combine(GetAppDirectory(), "backups", runId + "-" + safeName + "-registry");
             string logDirectory = Path.Combine(GetAppDirectory(), "logs");
@@ -2126,16 +2162,14 @@ namespace TempProfileFixer
             Directory.CreateDirectory(logDirectory);
 
             WriteLog(logPath, "Starting registry entry removal for " + profile.ProfilePath);
+            string phase = "exporting registry backups";
+            List<string> completedActions = new List<string>();
             try
             {
-                foreach (string keyName in plan.RegistryKeyNames)
-                {
-                    string destination = Path.Combine(backupDirectory, keyName + ".reg");
-                    WriteLog(logPath, "Exporting ProfileList key " + keyName + " to " + destination);
-                    ExportRegistryKey(keyName, destination, target.ComputerName);
-                    WriteLog(logPath, "Removing ProfileList key " + keyName);
-                    RemoveRegistryKey(keyName, target.ComputerName);
-                }
+                ExportAndValidateRegistryKeys(plan.RegistryKeyNames, backupDirectory, target.ComputerName, logPath, MutationAdapter);
+
+                phase = "removing ProfileList registry keys";
+                RemoveRegistryKeys(plan.RegistryKeyNames, target.ComputerName, logPath, MutationAdapter, completedActions);
 
                 WriteLog(logPath, "Registry entry removal completed successfully.");
 
@@ -2152,7 +2186,7 @@ namespace TempProfileFixer
             catch (Exception ex)
             {
                 WriteLog(logPath, "FAILED: " + ex.Message);
-                throw;
+                throw CreateOperationFailure("Registry removal", phase, backupDirectory, logPath, null, completedActions, ex);
             }
         }
 
@@ -2170,7 +2204,7 @@ namespace TempProfileFixer
                 throw new InvalidOperationException("Profile deletion is blocked: " + String.Join("; ", plan.BlockReasons.ToArray()));
             }
 
-            string runId = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            string runId = CreateRunId();
             string safeName = SafeFileName(profile.FolderName);
             string backupDirectory = Path.Combine(GetAppDirectory(), "backups", runId + "-" + safeName + "-delete");
             string logDirectory = Path.Combine(GetAppDirectory(), "logs");
@@ -2181,23 +2215,19 @@ namespace TempProfileFixer
             WriteLog(logPath, "Starting profile deletion for " + profile.ProfilePath);
             WriteLog(logPath, "Base SID: " + profile.BaseSid);
 
+            string phase = "exporting registry backups";
+            List<string> completedActions = new List<string>();
             try
             {
-                foreach (string keyName in plan.RegistryKeyNames)
-                {
-                    string destination = Path.Combine(backupDirectory, keyName + ".reg");
-                    WriteLog(logPath, "Exporting ProfileList key " + keyName + " to " + destination);
-                    ExportRegistryKey(keyName, destination, target.ComputerName);
-                }
+                ExportAndValidateRegistryKeys(plan.RegistryKeyNames, backupDirectory, target.ComputerName, logPath, MutationAdapter);
 
+                phase = "deleting the profile folder";
                 WriteLog(logPath, "Deleting profile folder " + plan.ProfilePath);
-                DeleteDirectoryTree(plan.ProfilePath, logPath);
+                MutationAdapter.DeleteDirectoryTree(plan.ProfilePath, logPath);
+                completedActions.Add("Deleted profile folder " + plan.ProfilePath);
 
-                foreach (string keyName in plan.RegistryKeyNames)
-                {
-                    WriteLog(logPath, "Removing ProfileList key " + keyName);
-                    RemoveRegistryKey(keyName, target.ComputerName);
-                }
+                phase = "removing ProfileList registry keys";
+                RemoveRegistryKeys(plan.RegistryKeyNames, target.ComputerName, logPath, MutationAdapter, completedActions);
 
                 WriteLog(logPath, "Profile deletion completed successfully.");
 
@@ -2214,7 +2244,7 @@ namespace TempProfileFixer
             catch (Exception ex)
             {
                 WriteLog(logPath, "FAILED: " + ex.Message);
-                throw;
+                throw CreateOperationFailure("Profile deletion", phase, backupDirectory, logPath, null, completedActions, ex);
             }
         }
 
@@ -2226,12 +2256,13 @@ namespace TempProfileFixer
         public static BakRemovalResult RemoveBakKeys(string profilePath, ProfileTarget target)
         {
             ProfileRecord profile = FindProfileByPath(profilePath, target);
-            if (!profile.BakKeyPresent)
+            BakRemovalPlan plan = CreateBakRemovalPlan(profile);
+            if (plan.IsBlocked)
             {
-                throw new InvalidOperationException("No .bak ProfileList key was found for " + profile.ProfilePath + ".");
+                throw new InvalidOperationException(".bak removal is blocked: " + String.Join("; ", plan.BlockReasons.ToArray()));
             }
 
-            string runId = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            string runId = CreateRunId();
             string safeName = SafeFileName(profile.FolderName);
             string backupDirectory = Path.Combine(GetAppDirectory(), "backups", runId + "-" + safeName + "-bak");
             string logDirectory = Path.Combine(GetAppDirectory(), "logs");
@@ -2240,16 +2271,14 @@ namespace TempProfileFixer
             Directory.CreateDirectory(logDirectory);
 
             WriteLog(logPath, "Starting .bak removal for " + profile.ProfilePath);
+            string phase = "exporting registry backups";
+            List<string> completedActions = new List<string>();
             try
             {
-                foreach (string keyName in profile.BakKeyNames.Distinct(StringComparer.OrdinalIgnoreCase))
-                {
-                    string destination = Path.Combine(backupDirectory, keyName + ".reg");
-                    WriteLog(logPath, "Exporting ProfileList key " + keyName + " to " + destination);
-                    ExportRegistryKey(keyName, destination, target.ComputerName);
-                    WriteLog(logPath, "Removing ProfileList key " + keyName);
-                    RemoveRegistryKey(keyName, target.ComputerName);
-                }
+                ExportAndValidateRegistryKeys(plan.RegistryKeyNames, backupDirectory, target.ComputerName, logPath, MutationAdapter);
+
+                phase = "removing .bak ProfileList registry keys";
+                RemoveRegistryKeys(plan.RegistryKeyNames, target.ComputerName, logPath, MutationAdapter, completedActions);
 
                 WriteLog(logPath, ".bak removal completed successfully.");
 
@@ -2257,7 +2286,7 @@ namespace TempProfileFixer
                 {
                     ProfilePath = profile.ProfilePath,
                     RegistryRoot = profile.RegistryRoot,
-                    RemovedKeys = new List<string>(profile.BakKeyNames),
+                    RemovedKeys = new List<string>(plan.RegistryKeyNames),
                     BackupDirectory = backupDirectory,
                     LogPath = logPath,
                     Success = true
@@ -2266,7 +2295,7 @@ namespace TempProfileFixer
             catch (Exception ex)
             {
                 WriteLog(logPath, "FAILED: " + ex.Message);
-                throw;
+                throw CreateOperationFailure(".bak removal", phase, backupDirectory, logPath, null, completedActions, ex);
             }
         }
 
@@ -2277,13 +2306,49 @@ namespace TempProfileFixer
 
         public static void RebootComputer(string computerName)
         {
+            ScheduleReboot(computerName, 0);
+        }
+
+        public static void ScheduleReboot(string computerName, int delaySeconds)
+        {
+            if (delaySeconds < 0)
+            {
+                throw new ArgumentOutOfRangeException("delaySeconds");
+            }
+
+            string target = IsRemoteComputer(computerName) ? " /m \\\\" + computerName.Trim().TrimStart('\\') : String.Empty;
+            RunShutdown("/r" + target + " /t " + delaySeconds + " /c \"Temp Profile Fixer requested reboot after profile rebuild.\"");
+        }
+
+        public static void AbortReboot(string computerName)
+        {
+            string target = IsRemoteComputer(computerName) ? " /m \\\\" + computerName.Trim().TrimStart('\\') : String.Empty;
+            RunShutdown("/a" + target);
+        }
+
+        private static void RunShutdown(string arguments)
+        {
             ProcessStartInfo startInfo = new ProcessStartInfo();
             startInfo.FileName = AppDiagnostics.GetSystemToolPath("shutdown.exe");
-            string target = IsRemoteComputer(computerName) ? " /m \\\\" + computerName.Trim().TrimStart('\\') : String.Empty;
-            startInfo.Arguments = "/r" + target + " /t 0 /c \"Temp Profile Fixer requested reboot after profile rebuild.\"";
+            startInfo.Arguments = arguments;
             startInfo.UseShellExecute = false;
             startInfo.CreateNoWindow = true;
-            Process.Start(startInfo);
+            using (Process process = Process.Start(startInfo))
+            {
+                if (process == null)
+                {
+                    throw new InvalidOperationException("Could not start shutdown.exe.");
+                }
+                if (!process.WaitForExit(15000))
+                {
+                    try { process.Kill(); } catch { }
+                    throw new TimeoutException("shutdown.exe did not complete within 15 seconds.");
+                }
+                if (process.ExitCode != 0)
+                {
+                    throw new InvalidOperationException("shutdown.exe failed with exit code " + process.ExitCode + ".");
+                }
+            }
         }
 
         public static Icon LoadApplicationIcon()
@@ -2664,7 +2729,7 @@ namespace TempProfileFixer
             }
         }
 
-        private static List<ProfileRecord> BuildInventory(
+        internal static List<ProfileRecord> BuildInventory(
             List<FolderRecord> folders,
             List<ProfileListEntry> entries,
             List<UserProfileState> states,
@@ -2766,6 +2831,7 @@ namespace TempProfileFixer
                 }
                 if (!String.IsNullOrWhiteSpace(stateWarning))
                 {
+                    blockReasons.Add("Could not fully verify loaded profile state");
                     warnings.Add("Win32_UserProfile query warning: " + stateWarning);
                 }
                 if (bakEntries.Count > 0)
@@ -2883,7 +2949,97 @@ namespace TempProfileFixer
             return String.Empty;
         }
 
-        private static void ExportRegistryKey(string keyName, string destinationPath, string computerName)
+        internal static string CreateRunId()
+        {
+            return DateTime.Now.ToString("yyyyMMdd-HHmmss-fff") + "-p" + Process.GetCurrentProcess().Id + "-" + Interlocked.Increment(ref runSequence);
+        }
+
+        internal static void ExportAndValidateRegistryKeys(
+            IEnumerable<string> keyNames,
+            string backupDirectory,
+            string computerName,
+            string logPath,
+            IProfileMutationAdapter adapter)
+        {
+            if (adapter == null)
+            {
+                throw new ArgumentNullException("adapter");
+            }
+
+            List<string> destinations = new List<string>();
+            foreach (string keyName in keyNames ?? Enumerable.Empty<string>())
+            {
+                string destination = Path.Combine(backupDirectory, keyName + ".reg");
+                WriteLog(logPath, "Exporting ProfileList key " + keyName + " to " + destination);
+                adapter.ExportRegistryKey(keyName, destination, computerName);
+                destinations.Add(destination);
+            }
+
+            foreach (string destination in destinations)
+            {
+                ValidateRegistryBackup(destination);
+                WriteLog(logPath, "Validated registry backup " + destination);
+            }
+        }
+
+        internal static void ValidateRegistryBackup(string path)
+        {
+            if (!File.Exists(path))
+            {
+                throw new InvalidOperationException("Registry backup was not created: " + path);
+            }
+
+            FileInfo info = new FileInfo(path);
+            if (info.Length == 0)
+            {
+                throw new InvalidOperationException("Registry backup is empty: " + path);
+            }
+
+            string text = File.ReadAllText(path);
+            if (!text.TrimStart('\uFEFF', ' ', '\r', '\n', '\t').StartsWith("Windows Registry Editor Version", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Registry backup has an invalid header: " + path);
+            }
+        }
+
+        internal static void RemoveRegistryKeys(
+            IEnumerable<string> keyNames,
+            string computerName,
+            string logPath,
+            IProfileMutationAdapter adapter,
+            List<string> completedActions)
+        {
+            foreach (string keyName in keyNames ?? Enumerable.Empty<string>())
+            {
+                WriteLog(logPath, "Removing ProfileList key " + keyName);
+                adapter.RemoveRegistryKey(keyName, computerName);
+                if (completedActions != null)
+                {
+                    completedActions.Add("Removed registry key " + keyName);
+                }
+            }
+        }
+
+        internal static ProfileOperationException CreateOperationFailure(
+            string operation,
+            string phase,
+            string backupDirectory,
+            string logPath,
+            string renamedPath,
+            List<string> completedActions,
+            Exception innerException)
+        {
+            return new ProfileOperationException(
+                operation,
+                phase,
+                backupDirectory,
+                logPath,
+                renamedPath,
+                completedActions,
+                innerException);
+        }
+
+        internal static void ExportRegistryKey(string keyName, string destinationPath, string computerName)
         {
             string regPath = GetProfileListRegPath(computerName) + "\\" + keyName;
             ProcessStartInfo startInfo = new ProcessStartInfo();
@@ -2899,7 +3055,7 @@ namespace TempProfileFixer
             }
         }
 
-        private static void RemoveRegistryKey(string keyName, string computerName)
+        internal static void RemoveRegistryKey(string keyName, string computerName)
         {
             RegistryView view = Environment.Is64BitOperatingSystem ? RegistryView.Registry64 : RegistryView.Default;
             using (RegistryKey localMachine = OpenLocalMachine(computerName, view))
@@ -2917,7 +3073,7 @@ namespace TempProfileFixer
             }
         }
 
-        private static void DeleteDirectoryTree(string directoryPath, string logPath)
+        internal static void DeleteDirectoryTree(string directoryPath, string logPath)
         {
             if (!Directory.Exists(directoryPath))
             {
@@ -3078,6 +3234,92 @@ namespace TempProfileFixer
         {
             string line = "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "] " + message + Environment.NewLine;
             File.AppendAllText(logPath, line, Encoding.UTF8);
+        }
+    }
+
+    internal interface IProfileMutationAdapter
+    {
+        void ExportRegistryKey(string keyName, string destinationPath, string computerName);
+        void RemoveRegistryKey(string keyName, string computerName);
+        void MoveDirectory(string sourcePath, string destinationPath);
+        void DeleteDirectoryTree(string directoryPath, string logPath);
+    }
+
+    internal sealed class WindowsProfileMutationAdapter : IProfileMutationAdapter
+    {
+        public void ExportRegistryKey(string keyName, string destinationPath, string computerName)
+        {
+            ProfileService.ExportRegistryKey(keyName, destinationPath, computerName);
+        }
+
+        public void RemoveRegistryKey(string keyName, string computerName)
+        {
+            ProfileService.RemoveRegistryKey(keyName, computerName);
+        }
+
+        public void MoveDirectory(string sourcePath, string destinationPath)
+        {
+            Directory.Move(sourcePath, destinationPath);
+        }
+
+        public void DeleteDirectoryTree(string directoryPath, string logPath)
+        {
+            ProfileService.DeleteDirectoryTree(directoryPath, logPath);
+        }
+    }
+
+    internal sealed class ProfileOperationException : InvalidOperationException
+    {
+        public string Operation { get; private set; }
+        public string Phase { get; private set; }
+        public string BackupDirectory { get; private set; }
+        public string LogPath { get; private set; }
+        public string RenamedPath { get; private set; }
+        public List<string> CompletedActions { get; private set; }
+
+        public ProfileOperationException(
+            string operation,
+            string phase,
+            string backupDirectory,
+            string logPath,
+            string renamedPath,
+            IEnumerable<string> completedActions,
+            Exception innerException)
+            : base(BuildMessage(operation, phase, backupDirectory, logPath, renamedPath, completedActions, innerException), innerException)
+        {
+            Operation = operation;
+            Phase = phase;
+            BackupDirectory = backupDirectory;
+            LogPath = logPath;
+            RenamedPath = renamedPath;
+            CompletedActions = new List<string>(completedActions ?? Enumerable.Empty<string>());
+        }
+
+        private static string BuildMessage(
+            string operation,
+            string phase,
+            string backupDirectory,
+            string logPath,
+            string renamedPath,
+            IEnumerable<string> completedActions,
+            Exception innerException)
+        {
+            List<string> actions = new List<string>(completedActions ?? Enumerable.Empty<string>());
+            StringBuilder builder = new StringBuilder();
+            builder.Append(operation + " failed while " + phase + ": " + innerException.Message);
+            builder.AppendLine();
+            builder.AppendLine("Registry backups: " + backupDirectory);
+            builder.AppendLine("Log: " + logPath);
+            if (!String.IsNullOrWhiteSpace(renamedPath))
+            {
+                builder.AppendLine("Planned renamed profile path: " + renamedPath);
+            }
+            if (actions.Count > 0)
+            {
+                builder.AppendLine("Completed before failure: " + String.Join("; ", actions.ToArray()));
+            }
+            builder.Append("Review the log and validated .reg backups before attempting manual recovery. No automatic rollback was attempted.");
+            return builder.ToString();
         }
     }
 
@@ -3307,6 +3549,41 @@ namespace TempProfileFixer
                 {
                     builder.AppendLine("This will permanently delete the profile folder and remove the matching ProfileList key(s).");
                 }
+            }
+            return builder.ToString();
+        }
+    }
+
+    internal sealed class BakRemovalPlan
+    {
+        public string FolderName { get; set; }
+        public string ProfilePath { get; set; }
+        public string BaseSid { get; set; }
+        public string RegistryRoot { get; set; }
+        public List<string> RegistryKeyNames { get; set; }
+        public bool IsBlocked { get; set; }
+        public List<string> BlockReasons { get; set; }
+        public List<string> Warnings { get; set; }
+
+        public string ToDisplayText()
+        {
+            StringBuilder builder = new StringBuilder();
+            builder.AppendLine("Folder: " + FolderName);
+            builder.AppendLine("Profile path: " + ProfilePath);
+            builder.AppendLine("Base SID: " + BaseSid);
+            builder.AppendLine("Blocked: " + IsBlocked);
+            if (BlockReasons != null && BlockReasons.Count > 0)
+            {
+                builder.AppendLine("Block reasons: " + String.Join("; ", BlockReasons.ToArray()));
+            }
+            if (Warnings != null && Warnings.Count > 0)
+            {
+                builder.AppendLine("Warnings: " + String.Join("; ", Warnings.ToArray()));
+            }
+            builder.AppendLine(".bak registry keys to export and delete:");
+            foreach (string keyName in RegistryKeyNames ?? new List<string>())
+            {
+                builder.AppendLine("  " + RegistryRoot + "\\" + keyName);
             }
             return builder.ToString();
         }
