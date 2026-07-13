@@ -702,7 +702,7 @@ namespace TempProfileFixer
             }
 
             StringBuilder builder = new StringBuilder();
-            builder.AppendLine(selected.FolderName + "  â€”  " + selected.ProfilePath);
+            builder.AppendLine(selected.FolderName + "  -  " + selected.ProfilePath);
             builder.AppendLine("SID: " + (String.IsNullOrWhiteSpace(selected.BaseSid) ? "(none matched)" : selected.BaseSid));
             builder.AppendLine("Loaded: " + (selected.Loaded ? "Yes" : "No") + "    Special: " + (selected.Special ? "Yes" : "No"));
             builder.AppendLine("Normal keys: " + FormatDetailList(selected.NormalKeyNames));

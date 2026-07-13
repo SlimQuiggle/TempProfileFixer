@@ -340,6 +340,19 @@ foreach ($checksumFile in @('TempProfileFixer.exe', 'TempProfileFixer.exe.config
         throw "Checksum file does not include $checksumFile."
     }
 }
+$checksumEntries = @{}
+foreach ($line in ($checksumText -split "`r?`n")) {
+    if ($line -match '^([0-9a-fA-F]{64})\s{2}(.+)$') {
+        $checksumEntries[$Matches[2]] = $Matches[1].ToLowerInvariant()
+    }
+}
+foreach ($checksumFile in $checksumEntries.Keys) {
+    $checksumTarget = Join-Path $repoRoot (Join-Path 'dist' $checksumFile)
+    $actualHash = (Get-FileHash -LiteralPath $checksumTarget -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualHash -ne $checksumEntries[$checksumFile]) {
+        throw "Checksum mismatch for $checksumFile."
+    }
+}
 
 $unblockText = Get-Content -LiteralPath (Join-Path $repoRoot 'dist\Unblock-Package.cmd') -Raw
 if ($unblockText -notmatch 'Unblock-File') {

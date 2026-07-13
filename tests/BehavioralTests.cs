@@ -17,6 +17,7 @@ namespace TempProfileFixer.Tests
             {
                 TestPlansFailClosed();
                 TestPartialWmiBlocksInventory(root);
+                TestDuplicateStateFailsClosed(root);
                 TestFolderOnlyDeletePolicy();
                 TestRegistryBackupOrdering(root);
                 TestBackupValidationPreventsRemoval(root);
@@ -99,6 +100,38 @@ namespace TempProfileFixer.Tests
 
             profile.BlockReasons.Add("Could not fully verify loaded profile state");
             Assert(ProfileService.CreateDeleteProfilePlan(profile).IsBlocked, "Folder-only deletion must block when WMI verification is partial.");
+        }
+
+        private static void TestDuplicateStateFailsClosed(string root)
+        {
+            string profilePath = Path.Combine(root, "DuplicateStateUser");
+            Directory.CreateDirectory(profilePath);
+            string normalized = ProfileService.NormalizePath(profilePath);
+            List<FolderRecord> folders = new List<FolderRecord>
+            {
+                new FolderRecord { Name = "DuplicateStateUser", FullName = profilePath, NormalizedPath = normalized, ActualNormalizedPath = normalized }
+            };
+            List<ProfileListEntry> entries = new List<ProfileListEntry>
+            {
+                new ProfileListEntry { KeyName = "S-1-duplicate", BaseSid = "S-1-duplicate", NormalizedProfilePath = normalized }
+            };
+            List<UserProfileState> states = new List<UserProfileState>
+            {
+                new UserProfileState { Sid = "S-1-duplicate", LocalPath = profilePath, NormalizedPath = normalized, Loaded = false },
+                new UserProfileState { Sid = "S-1-duplicate", LocalPath = profilePath, NormalizedPath = normalized, Loaded = true }
+            };
+
+            ProfileRecord record = ProfileService.BuildInventory(
+                folders,
+                entries,
+                states,
+                String.Empty,
+                String.Empty,
+                null,
+                null,
+                ProfileService.ProfileListRegPath,
+                null).Single();
+            Assert(record.Loaded && record.IsBlocked, "Duplicate WMI states must fail closed when any matching row is loaded.");
         }
 
         private static void TestRegistryBackupOrdering(string root)

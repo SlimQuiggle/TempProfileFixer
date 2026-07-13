@@ -39,6 +39,12 @@ Use one of these selectors with commands that operate on a single profile:
 users root, which defaults to `C:\Users` locally or `\\COMPUTER\C$\Users` when
 `--computer` is used.
 
+Print the embedded application version without elevation:
+
+```powershell
+.\TempProfileFixer.exe version
+```
+
 ## Local examples
 
 List local profile folders and matched base SIDs:
@@ -176,6 +182,7 @@ Invoke-Command -ComputerName PC-1234 -ScriptBlock {
 ## Commands and switches
 
 ```text
+TempProfileFixer.exe version
 TempProfileFixer.exe list [--computer PCNAME] [--users-root PATH] [--profile-root PATH]
 TempProfileFixer.exe doctor [--computer PCNAME] [--users-root PATH] [--profile-root PATH]
 TempProfileFixer.exe dry-run (--profile NAME | --path PATH | --sid SID) [--computer PCNAME]
@@ -197,15 +204,18 @@ Useful switches:
 
 ## Safety behavior
 
-Rebuild and delete actions are blocked when the selected profile is current,
-loaded, special/system, matched ambiguously, or loaded state cannot be verified.
+Rebuild, delete, registry removal, and `.bak` removal are blocked when the
+selected profile is current, loaded, special/system, matched ambiguously, or
+loaded state cannot be verified. Partial `Win32_UserProfile` reads also block
+mutations because an unreadable row could conceal a loaded profile.
 Rebuild is also blocked when a matching ProfileList SID is missing. Registry
-keys are exported before deletion.
+keys are all exported and validated before the first mutation.
 Delete Profile removes directory reparse points, such as profile junctions,
 without recursing into their targets.
 Delete Profile can remove a folder-only temp profile that has no matching
 ProfileList SID or registry key. Rebuild Profile still requires a matched SID so
-it can export/delete the correct registry state.
+it can export/delete the correct registry state. Folder-only deletion is not
+allowed when registry or WMI verification is incomplete.
 
 ## Troubleshooting startup failures
 

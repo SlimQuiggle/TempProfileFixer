@@ -23,6 +23,11 @@ diagnostics, help, listing, and dry-run modes can start without elevation so a
 failed workstation can print useful troubleshooting output. Rebuild, delete, and
 registry-removal commands require an elevated administrator prompt.
 
+The v0.2 GUI keeps inventory, diagnostics, and profile work off the interface
+thread, shows the selected profile's safety details, and blocks every mutation
+when loaded-profile verification is incomplete. Registry backups are validated
+before any folder or registry change begins.
+
 If the app fails to open or fails on a specific workstation, run the
 non-destructive diagnostics command first. Running it elevated gives the most
 complete result, but it can also run unelevated to show startup and prerequisite
@@ -96,7 +101,8 @@ tool folder. On older PowerShell versions, it falls back to clearing the
 system tool paths directly so it can still run when the workstation's `PATH` is
 damaged.
 
-Use the visible `Help / FAQ` button in the header, or `Help` > `Help / FAQ` in
+Use the visible `Diagnostics` button for a compatibility report. Use
+`Help / FAQ` in the header, or `Help` > `Help / FAQ` in
 the menu bar, for a formatted overview of each button, right-click actions,
 blocked-profile reasons, reboot behavior, command-line usage, and backup/log
 locations.
@@ -112,7 +118,8 @@ Right-click a profile row for actions:
 
 The large top-left `Rebuild Profile` button runs the full rebuild for the
 highlighted profile: rename the folder to `.old<date>`, export/delete matching
-ProfileList registry entries, then start the reboot after the rebuild succeeds.
+ProfileList registry entries, then offer a cancelable 60-second reboot or let
+the administrator restart later.
 It greys out when the highlighted profile is locked, loaded, current, or
 otherwise blocked.
 
@@ -123,6 +130,12 @@ folder as long as it is not the current, loaded, special/system, missing, or
 otherwise unsafe profile.
 
 ## Command line
+
+Print the embedded application version:
+
+```powershell
+.\dist\TempProfileFixer.exe version
+```
 
 You can select a profile by `--profile`, `--path`, or `--sid`. Rebuild, delete,
 and registry-removal commands must be run from an elevated administrator prompt.
@@ -231,10 +244,19 @@ The app blocks rebuilds for profiles that are:
 - matched to multiple SIDs
 - matched to multiple normal ProfileList keys
 - unable to verify loaded state through `Win32_UserProfile`
+- affected by a partial `Win32_UserProfile` result where one or more rows could
+  not be read safely
 
 Delete Profile can remove a folder-only temp profile that has no matching
 ProfileList SID or registry key. Rebuild Profile still requires a matched SID so
-it can export/delete the correct registry state.
+it can export/delete the correct registry state. Folder-only deletion is also
+blocked whenever registry or loaded-profile verification is incomplete.
+
+All matching registry keys are exported and validated before the first
+mutation. A backup must exist, be nonempty, and contain a valid registry export
+header. If a later phase fails, the error and log identify the completed
+actions and recovery locations; the tool does not attempt an unsafe automatic
+rollback.
 
 The app does not collect the target user's password and does not try to create a
 fake interactive sign-in. Windows creates the fresh profile when the target user
@@ -307,6 +329,7 @@ Run the lightweight tests:
 
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File .\tests\Run-SmokeTests.ps1
+powershell.exe -ExecutionPolicy Bypass -File .\tests\Run-BehavioralTests.ps1
 ```
 
 The public GitHub repository also runs the build and smoke tests on

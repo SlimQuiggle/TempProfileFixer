@@ -989,10 +989,10 @@ namespace TempProfileFixer
             string registryRoot,
             string registryError)
         {
-            Dictionary<string, UserProfileState> statesBySid = states
+            Dictionary<string, List<UserProfileState>> statesBySid = states
                 .Where(s => !String.IsNullOrWhiteSpace(s.Sid))
                 .GroupBy(s => s.Sid, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+                .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
 
             Dictionary<string, List<UserProfileState>> statesByPath = states
                 .Where(s => !String.IsNullOrWhiteSpace(s.NormalizedPath))
@@ -1024,11 +1024,11 @@ namespace TempProfileFixer
                 UserProfileState state = null;
                 if (!String.IsNullOrWhiteSpace(baseSid) && statesBySid.ContainsKey(baseSid))
                 {
-                    state = statesBySid[baseSid];
+                    state = AggregateProfileState(statesBySid[baseSid]);
                 }
-                else if (statesByPath.ContainsKey(folder.NormalizedPath) && statesByPath[folder.NormalizedPath].Count == 1)
+                else if (statesByPath.ContainsKey(folder.NormalizedPath))
                 {
-                    state = statesByPath[folder.NormalizedPath][0];
+                    state = AggregateProfileState(statesByPath[folder.NormalizedPath]);
                 }
 
                 bool loaded = state != null && state.Loaded;
@@ -1133,6 +1133,25 @@ namespace TempProfileFixer
             }
 
             return records;
+        }
+
+        private static UserProfileState AggregateProfileState(IEnumerable<UserProfileState> matchingStates)
+        {
+            List<UserProfileState> matches = new List<UserProfileState>(matchingStates ?? Enumerable.Empty<UserProfileState>());
+            UserProfileState first = matches.FirstOrDefault();
+            if (first == null)
+            {
+                return null;
+            }
+
+            return new UserProfileState
+            {
+                Sid = first.Sid,
+                LocalPath = first.LocalPath,
+                NormalizedPath = first.NormalizedPath,
+                Loaded = matches.Any(s => s.Loaded),
+                Special = matches.Any(s => s.Special)
+            };
         }
 
         private static string GetUniqueOldPath(string profilePath, DateTime now)
